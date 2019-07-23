@@ -12,34 +12,58 @@ open Fable.Helpers.React.Props
 open Fable.PowerPack
 // MODEL
 
-type Model = int
+type WorkflowName = string
+
+type Model = {
+  selectedWorkflow: WorkflowName
+  running: bool
+}
 
 type Msg =
-| Increment
-| Decrement
+| SelectWorkflow of WorkflowName
+| Start
+| Stop
 
+let workflows = ["one"; "two"; "three"]
 let init() : Model = 
-  match BrowserLocalStorage.load Thoth.Json.Decode.int "value" with
-  | Ok value -> value
-  | Error _ -> 0
+  {
+    selectedWorkflow = List.head workflows
+    running = false
+  }
+  // match BrowserLocalStorage.load Thoth.Json.Decode.int "value" with
+  // | Ok value -> value
+  // | Error _ -> 0
 
 // UPDATE
-
 let update (msg:Msg) (model:Model) =
   let newModel =   
     match msg with
-    | Increment -> model + 3
-    | Decrement -> model - 2    
-  BrowserLocalStorage.save "value" newModel
+    | SelectWorkflow wf -> {model with selectedWorkflow = wf}
+    | Start -> {model with running = true}    
+    | Stop -> {model with running = false}    
+  //BrowserLocalStorage.save "value" newModel
   newModel
-// VIEW (rendered with React)
 
-let view (model:Model) dispatch =
-
+let selectWorkflowView (model: Model) dispatch = 
   div []
-      [ button [ OnClick (fun _ -> dispatch Increment) ] [ str "+" ]
-        div [] [ str (string model) ]
-        button [ OnClick (fun _ -> dispatch Decrement) ] [ str "-" ] ]
+    [ 
+      select [] (seq {for wf in workflows do yield option [] [str wf]})
+      button [OnClick (fun _ -> dispatch Start)] [str "Start"]
+    ]
+
+let runningWorkflowView (model:Model) dispatch = 
+  div []
+    [
+      str (sprintf "Running %s" model.selectedWorkflow)
+      button [OnClick (fun _ -> dispatch Stop)] [str "Stop"]
+    ]  
+    
+// VIEW (rendered with React)
+let view (model:Model) dispatch =
+  if model.running then
+    runningWorkflowView model dispatch
+  else
+    selectWorkflowView model dispatch
 
 // App
 Program.mkSimple init update view
