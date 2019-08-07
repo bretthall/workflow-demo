@@ -9,6 +9,7 @@ open Elmish
 open Elmish.React
 open Fable.Helpers.React
 open Fable.Helpers.React.Props
+open Fable.Import
 open Fable.PowerPack
 // MODEL
 
@@ -186,8 +187,37 @@ let view (model:Model) dispatch =
   | None ->
     selectWorkflowView model dispatch
 
+type MbMsg = 
+  | NewSubcription of (Msg -> unit)
+  | SendMsg of Msg
+
+let subMgr = MailboxProcessor<MbMsg>.Start (fun inbox ->
+  let rec loop (subs: List<Msg -> unit>) = 
+    async {
+      match! inbox.Receive () with
+      | NewSubcription sub -> return! loop (sub :: subs)
+      | SendMsg msg -> 
+        subs |> List.iter (fun s -> s msg)
+        return! loop subs
+    }
+  loop []
+)
+
+let subscribe (init: Model) =
+  let sub (dispatch: Msg -> unit) =   
+    subMgr.Post (NewSubcription dispatch)
+  Cmd.ofSub sub
+
+
+async {
+  while true do
+    do! Async.Sleep 1000
+    subMgr.Post (SendMsg (Run AddMsg))
+} |> Async.Start
+
 // App
 Program.mkProgram init update view
 |> Program.withReact "elmish-app"
 |> Program.withConsoleTrace
+|> Program.withSubscription subscribe
 |> Program.run
