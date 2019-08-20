@@ -17,7 +17,7 @@ type ClientHubMsg<'msg> =
     | NewClient of int * ClientHubQueueDispatch<'msg>
     | RemoveClient of int
     | Broadcast of 'msg
-    | StopHub
+    | StopHub of AsyncReplyChannel<unit>
 
 type ClientHubState<'msg> = {
     clients: List<int * ClientHubQueueDispatch<'msg>>
@@ -76,9 +76,10 @@ type ClientHub<'outMsg, 'inMsg>(pipeName: string) =
                     for (_, client) in state.clients do
                         client (Msg msg)
                     return! loop state                           
-                | StopHub ->
+                | StopHub reply ->
                     for (_, client) in state.clients do
                         client Stop
+                    reply.Reply ()
                     return! loop {state with clients = []}
             }
         loop {clients = []; newClientHandler = None}
@@ -86,6 +87,6 @@ type ClientHub<'outMsg, 'inMsg>(pipeName: string) =
 
     member __.Start ?newClientHandler = agent.Post (Start newClientHandler)
     member __.Broadcast msg = agent.Post (Broadcast msg)
-    member __.Stop () = agent.Post StopHub
+    member __.Stop () = agent.PostAndReply StopHub
     member __.MsgRecvd = msgRecvd.Publish
 

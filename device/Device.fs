@@ -41,14 +41,19 @@ type ClientMgr () =
 
 [<EntryPoint>]
 let main argv =
+    
+    let clientMgr = ClientMgr ()
+
     let view = View.View ()
     let rec loop num = 
         async {
             do! Async.Sleep 1000
-            view.SetFoo num
+            view.SetBar num
             return! loop (num + 1)
         }
     loop 1 |> Async.Start
     view.Run ()
     
+    clientMgr.Stop ()
+
     0 // return an integer exit code
