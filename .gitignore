@@ -1,0 +1,8 @@
+common/bin
+common/obj
+control/bin
+control/obj
+device/bin
+device/obj
+workflow/bin
+workflow/obj
