@@ -12,6 +12,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="PipeClient.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
