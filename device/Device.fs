@@ -1,7 +1,8 @@
 ﻿module WorkflowDemo.Device.Main
 
 open System
-
+open Terminal.Gui.Elmish
+open Terminal.Gui
 open WorkflowDemo.Common
 
 type ClientMgrMsg = 
@@ -44,15 +45,17 @@ let main argv =
     
     let clientMgr = ClientMgr ()
 
-    let view = View.View ()
-    let rec loop num = 
-        async {
-            do! Async.Sleep 1000
-            view.SetBar num
-            return! loop (num + 1)
-        }
-    loop 1 |> Async.Start
-    view.Run ()
+    Program.mkProgram Model.init Update.update View.view
+    |> Program.withSubscription (fun _ ->
+            let sub dispatch =               
+                async {
+                    while true do
+                        do! Async.Sleep 1000
+                        Application.MainLoop.Invoke (Action (fun _ -> dispatch Model.IncBar))                   
+                } |> Async.Start
+            Cmd.ofSub sub
+        )
+    |> Program.run
     
     clientMgr.Stop ()
 

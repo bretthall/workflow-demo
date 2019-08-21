@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.2</TargetFramework>
@@ -10,6 +10,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="PipeServer.fs" />
+    <Compile Include="Model.fs" />
+    <Compile Include="Update.fs" />
     <Compile Include="View.fs" />
     <Compile Include="Device.fs" />
   </ItemGroup>
@@ -17,5 +19,6 @@
     <PackageReference Include="fspickler" Version="5.2.2" />
     <PackageReference Include="nstack.core" Version="0.12.0" />
     <PackageReference Include="Terminal.Gui" Version="0.24.0" />
+    <PackageReference Include="Terminal.Gui.Elmish" Version="0.1.3" />
   </ItemGroup>
 </Project>
