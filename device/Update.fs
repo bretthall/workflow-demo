@@ -2,12 +2,19 @@ module WorkflowDemo.Device.Update
 
 open System
 open Terminal.Gui.Elmish
+open WorkflowDemo.Common
 
 let update (msg: Model.Message) (model: Model.Model) =
     match msg with
-    | Model.IncFoo -> {model with foo = model.foo + 1}, Cmd.none
-    | Model.IncBar -> {model with bar = model.bar + 1}, Cmd.none
+    | Model.DeviceMsg dm ->
+        match dm with
+        | Device.Bar value -> {model with bar = value}, Cmd.none
+    | Model.IncFoo -> 
+        let newFoo = model.foo + 1
+        model.clientMgr.Broadcast (WorkflowDemo.Common.Control.Foo newFoo)
+        {model with foo = newFoo}, Cmd.none
     | Model.Quit  ->
+        model.clientMgr.Stop ()
         Console.Clear ()
         Environment.Exit 0
         model, Cmd.none

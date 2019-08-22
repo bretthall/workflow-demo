@@ -21,7 +21,7 @@ type Client<'outMsg, 'inMsg>(pipeName: string) =
             try 
                 pickler.SerializeSequence (
                     pipe, 
-                    () |> Seq.unfold (fun keepGoing -> 
+                    () |> Seq.unfold (fun _ -> 
                         let msg = queue.Receive ()
                         match msg with
                         | Stop -> None
@@ -29,17 +29,20 @@ type Client<'outMsg, 'inMsg>(pipeName: string) =
                     )
                 ) |> ignore
             with
-            | exc -> 
+            | _ -> 
                 pipe.Close ()
         } |> Async.Start
     do 
         async {
-            for msg in pickler.DeserializeSequence<'inMsg>(pipe) do
-                msgRecvd.Trigger(msg)
+            try
+                for msg in pickler.DeserializeSequence<'inMsg>(pipe) do
+                    msgRecvd.Trigger(msg)
+            with
+            | _ -> () //closing pipe handled in sending async above
         } |> Async.Start
         
 
-    member __.Broadcast msg = queue.Post (Send msg)
-    member __.Stop () = queue.Post Stop
+    member __.Send msg = queue.Post (Send msg) |> ignore
+    member __.Stop () = queue.Post Stop |> ignore
     member __.MsgRecvd = msgRecvd.Publish
 

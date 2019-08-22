@@ -45,7 +45,7 @@ type ClientHub<'outMsg, 'inMsg>(pipeName: string) =
                                     try 
                                         pickler.SerializeSequence (
                                             pipe, 
-                                            () |> Seq.unfold (fun keepGoing -> 
+                                            () |> Seq.unfold (fun _ -> 
                                                 let msg = queue.Receive ()
                                                 match msg with
                                                 | Stop -> None
@@ -53,13 +53,16 @@ type ClientHub<'outMsg, 'inMsg>(pipeName: string) =
                                             )
                                         ) |> ignore
                                     with
-                                    | exc -> 
+                                    | _ -> 
                                         pipe.Close ()
                                         inbox.Post (RemoveClient id)                                
                                 } |> Async.Start      
                                 async {
-                                    for msg in pickler.DeserializeSequence<'inMsg>(pipe) do
-                                        msgRecvd.Trigger(msg)
+                                    try 
+                                        for msg in pickler.DeserializeSequence<'inMsg>(pipe) do
+                                            msgRecvd.Trigger(msg)
+                                    with
+                                    | _ -> () //pipe close is handled by the sending async
                                 } |> Async.Start
                                 inbox.Post (NewClient (id, (queue.Post >> ignore)))
                                 return! handleConnections (id + 1)   
