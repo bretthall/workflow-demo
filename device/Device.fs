@@ -9,7 +9,7 @@ let main _ =
     
     let clientMgr = ClientMgr.ClientMgr ()
 
-    Program.mkProgram Model.init Update.update View.view
+    Program.mkSimple Model.init Update.update View.view
     |> Program.withSubscription (fun _ ->
             let subClient dispatch =
                 clientMgr.MsgRecvd.Add (fun msg -> 

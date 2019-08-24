@@ -17,16 +17,17 @@ type ClientMgr () =
             async {
                 match! inbox.Receive() with
                 | ClientMgrMsg.NewClient (client, reply) -> 
-                    client (Control.Foo curFoo)
+                    //client (Control.Foo curFoo)
                     reply.Reply ()
                     return! loop curFoo
                 | SendMsg msg ->
-                    let newFoo = 
-                        match msg with 
-                        | Control.Foo newFoo -> newFoo
-                        | _ -> curFoo
+//                    let newFoo = 
+//                        match msg with 
+//                        | Control.Foo newFoo -> newFoo
+//                        | _ -> curFoo
                     hub.Broadcast msg
-                    return! loop newFoo                            
+                    //return! loop newFoo                            
+                    return! loop curFoo                            
             }
         loop 0
     )

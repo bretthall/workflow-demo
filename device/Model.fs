@@ -1,17 +1,9 @@
 module WorkflowDemo.Device.Model
 
 open Terminal.Gui.Elmish
-open WorkflowDemo.Common
 
-type State = 
-    | Good
-    | Bad
-    | Ugly
-  
-let nextState  = function
-    | Good -> Bad
-    | Bad -> Ugly
-    | Ugly -> Good
+open WorkflowDemo.Common
+open WorkflowDemo.Common.Device
 
 type InputState = {
     prompt: string
@@ -34,7 +26,7 @@ let init clientMgr =
         inputState = Some {prompt = "prompt"; current = "current"}
         msgs = ["one"; "two"; "three"]
     }
-    model, Cmd.none
+    model
 
 type DataMsg =
     | IncData
