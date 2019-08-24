@@ -28,43 +28,56 @@ let view (model: Model.Model) dispatch =
           Styles [Colors (Color.BrightGreen, Color.Black)]
           
       ][
+          let stateRow = 0
           yield label [
               Styles [
                 Colors (stateToColor model.state, Color.Black)
-                Pos (AbsPos 0, AbsPos 0)
+                Pos (AbsPos 0, AbsPos stateRow)
               ]
               Text (stateToText model.state)                
           ]
           
+          let dataRow = stateRow + 1
+          let dataLabel = sprintf "Data: %d" model.dataValue
+          yield label [
+              Text dataLabel
+              Styles [Pos (AbsPos 0, AbsPos dataRow)]            
+          ]
+          yield button [
+            Text "Reset"
+            Styles [Pos (AbsPos (max ("Data:      ".Length) dataLabel.Length), AbsPos dataRow)]            
+            OnClicked (fun _ -> dispatch (Model.DataMsg Model.ResetData))
+          ]
+          
+          let inputRow = dataRow + 1
           match model.inputState with
           | Some inputState -> 
             let inputLabel = label [
-              Styles [Pos (AbsPos 0, AbsPos 1)]
+              Styles [Pos (AbsPos 0, AbsPos inputRow)]
               Text inputState.prompt
             ]
             yield inputLabel
-            let inputField = textField [
+            yield textField [
               Value inputState.current
               OnChanged (fun v -> dispatch (Model.InputUpdate v |> Model.InputMsg))
               Styles [
-                Pos (AbsPos inputState.prompt.Length, AbsPos 1)
+                Pos (AbsPos inputState.prompt.Length, AbsPos inputRow)
                 Dim (AbsDim 30, AbsDim 1)
               ]
             ]
-            yield inputField
             yield button [
               Text "Send"
               OnClicked (fun _ -> dispatch (Model.InputDone |> Model.InputMsg))
               Styles [
-                Pos (AbsPos (inputState.prompt.Length + 30), AbsPos 1)
+                Pos (AbsPos (inputState.prompt.Length + 30), AbsPos inputRow)
               ]
             ]
           | None -> yield! []
-
+          let msgsRow = inputRow + 1
           yield frameView [
             Text "Messages"
             Styles [
-              Pos (AbsPos 0, AbsPos 3)
+              Pos (AbsPos 0, AbsPos msgsRow)
               Dim (Fill, Dimension.FillMargin 1)
             ]
           ][
