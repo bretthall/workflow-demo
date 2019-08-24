@@ -9,14 +9,14 @@ let update (msg: Model.Message) (model: Model.Model) =
   match msg with
   | Model.DeviceMsg dm ->
     match dm with
-    | Device.SetState state -> {model with state = state}
-    | Device.RequestInput prompt -> {model with inputState = Some {prompt = prompt; current = ""}}
-    | Device.CancelInput -> {model with inputState = None}
+    | Device.SetState state -> {model with state = state; msgs = "got set state" :: model.msgs}
+    | Device.RequestInput prompt -> {model with inputState = Some {prompt = prompt; current = ""}; msgs = "got start input" :: model.msgs}
+    | Device.CancelInput -> {model with inputState = None; msgs = "got cancel input" :: model.msgs}
     | Device.AddMsg msg -> {model with msgs = msg :: model.msgs}
   | Model.DataMsg dm ->
     match dm with
     | Model.IncData ->
-      let newData = model.dataValue + 2
+      let newData = model.dataValue + 1
       model.clientMgr.Broadcast (Control.DataUpdate newData)
       {model with dataValue = newData}
     | Model.ResetData -> {model with dataValue = 0}

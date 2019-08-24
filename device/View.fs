@@ -4,7 +4,6 @@ open Terminal.Gui
 open Terminal.Gui.Elmish
 open WorkflowDemo.Common
 
-
 type WorkflowName = string
 
 module private Private = 
@@ -34,7 +33,7 @@ let view (model: Model.Model) dispatch =
           Colors (stateToColor model.state, Color.Black)
           Pos (AbsPos 0, AbsPos stateRow)
         ]
-        Text (stateToText model.state)                
+        Text (sprintf "State: %s" (stateToText model.state))                
       ]
       
       let dataRow = stateRow + 1
