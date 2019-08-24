@@ -23,8 +23,8 @@ let init clientMgr =
         clientMgr = clientMgr
         dataValue = 0
         state = Good
-        inputState = Some {prompt = "prompt"; current = "current"}
-        msgs = ["one"; "two"; "three"]
+        inputState = None
+        msgs = []
     }
     model
 
