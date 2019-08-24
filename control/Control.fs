@@ -26,6 +26,7 @@ type NotRunningState = {
 type RunningState = {
     workflow: Workflows.Workflow
     state: string
+    paused: bool
     lastDataValue: int
     msgs: List<string>
 }
@@ -47,7 +48,7 @@ let init client = {
 
 type WorkflowMsg =
     | Start
-    | Pause
+    | Pause of bool
     | Stop
     | Finish
     | Reset
@@ -70,10 +71,11 @@ let updateNotRunning (state: NotRunningState) msg =
             Running {
                 workflow = state.selectedWorkflow
                 state = "Started"
+                paused = false
                 lastDataValue = 0
                 msgs = []                
             }
-        | Pause | Stop | Finish | Reset -> NotRunning state
+        | Pause _ | Stop | Finish | Reset -> NotRunning state
     | SetState _ | AddMsg _ -> NotRunning state 
     | Quit ->        
         Console.Clear ()
@@ -96,7 +98,7 @@ let updateRunning state msg =
             }
         | Finish ->
             Done state
-        | Pause -> Running state //TODO: Handle pause
+        | Pause paused -> Running {state with paused = paused}
         | Start | Reset -> Running state
     | SetState value -> Running {state with state = value}
     | AddMsg msg -> Running {state with msgs = msg :: state.msgs} 
@@ -109,7 +111,7 @@ let updateDone state msg =
     | WorkflowMsg m ->
         match m with
         | Reset -> NotRunning {selectedWorkflow = state.workflow}
-        | Start | Pause | Stop | Finish -> Done state
+        | Start | Pause _ | Stop | Finish -> Done state
     | SetState _ | AddMsg _ -> Done state
     | Quit -> Done state
 
@@ -168,11 +170,11 @@ let viewRunning state dispatch : List<View> =
             Text wfText
             Styles [Pos (AbsPos 0, AbsPos wfRow)]
         ]
-        let pauseText = "Pause"
+        let pauseText = if state.paused then "Resume" else "Pause"
         yield button [
             Text pauseText
             Styles [Pos (AbsPos (wfText.Length + 5), AbsPos wfRow)]
-            OnClicked (fun _ -> dispatch (WorkflowMsg Pause))
+            OnClicked (fun _ -> dispatch (not state.paused |> Pause |> WorkflowMsg))
         ]
         yield button [
             Text "Stop"
@@ -182,7 +184,7 @@ let viewRunning state dispatch : List<View> =
         
         let stateRow = wfRow + 1
         yield label [
-            Text (sprintf "State: %s" state.state)
+            Text (sprintf "State: %s%s" state.state (if state.paused then " (PAUSED)" else ""))
             Styles [Pos (AbsPos 0, AbsPos stateRow)]
         ]
         
