@@ -10,20 +10,34 @@ let main _ =
     let clientMgr = ClientMgr.ClientMgr ()
 
     Program.mkSimple Model.init Update.update View.view
-    |> Program.withSubscription (fun _ ->
-            let subClient dispatch =
-                clientMgr.MsgRecvd.Add (fun msg -> 
-                    Application.MainLoop.Invoke (Action (fun _ -> dispatch (Model.DeviceMsg msg)))
+    |> Program.withSubscription (fun _ ->            
+            let sub dispatch =
+                // If messages go into the main loop too fast they get lost so
+                // introduce a delay here
+                let agent = MailboxProcessor<Model.Message>.Start (fun inbox ->
+                    let rec loop (stopwatch: System.Diagnostics.Stopwatch) =
+                        async {                            
+                            let! msg = inbox.Receive ()
+                            let remain = int (100.0 - stopwatch.Elapsed.TotalMilliseconds)
+                            if remain > 0 then
+                                do! Async.Sleep remain
+                            Application.MainLoop.Invoke (Action (fun _ -> dispatch msg))
+                            stopwatch.Restart ()
+                            return! loop stopwatch
+                        }
+                    loop (System.Diagnostics.Stopwatch.StartNew ())
                 )
-            let subData dispatch =
+                clientMgr.MsgRecvd.Add (fun msg -> 
+                    agent.Post (Model.DeviceMsg msg)
+                )
                 let rec updateData () =
                     async {
                         do! Async.Sleep 1000
-                        Application.MainLoop.Invoke (Action (fun _ -> dispatch (Model.DataMsg Model.IncData)))
+                        agent.Post (Model.DataMsg Model.IncData)
                         return! updateData ()
                     }
                 Async.Start (updateData ())
-            Cmd.batch [Cmd.ofSub subClient; Cmd.ofSub subData]
+            Cmd.ofSub sub
         )
     |> Program.runWith clientMgr
 
