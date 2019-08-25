@@ -18,7 +18,7 @@ let main _ =
                     let rec loop (stopwatch: System.Diagnostics.Stopwatch) =
                         async {                            
                             let! msg = inbox.Receive ()
-                            let remain = int (100.0 - stopwatch.Elapsed.TotalMilliseconds)
+                            let remain = int (25.0 - stopwatch.Elapsed.TotalMilliseconds)
                             if remain > 0 then
                                 do! Async.Sleep remain
                             Application.MainLoop.Invoke (Action (fun _ -> dispatch msg))

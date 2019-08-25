@@ -30,7 +30,7 @@ let view (model: Model.Model) dispatch =
       let stateRow = 0
       yield label [
         Styles [
-          Colors (stateToColor model.state, Color.Black)
+          Colors (stateToColor model.state, Color.Blue)
           Pos (AbsPos 0, AbsPos stateRow)
         ]
         Text (sprintf "State: %s" (stateToText model.state))                
