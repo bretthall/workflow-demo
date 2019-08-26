@@ -271,11 +271,17 @@ let main _ =
     printfn "Waiting for device to start up..."
     let client = Client (Common.pipeName)
     
+    client.Send (Device.SetState Device.Ugly)
+    client.Send (Device.AddMsg "testing 1 2 3")
+    client.Send (Device.RequestInput "the prompt")
+    Async.Sleep 5000 |> Async.RunSynchronously
+    client.Send (Device.CancelInput)
+    
     Program.mkSimple init update view
     |> Program.withSubscription (fun model ->
             let sub dispatch =
                 model.client.MsgRecvd.Add (fun msg ->
-                    Application.MainLoop.Invoke (Action (fun _ -> dispatch (ControlMsg msg)))                                       
+                    dispatch (ControlMsg msg)                                       
                 )
             Cmd.ofSub sub
         )

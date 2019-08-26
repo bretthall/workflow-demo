@@ -1,7 +1,5 @@
 module WorkflowDemo.Device.Model
 
-open Terminal.Gui.Elmish
-
 open WorkflowDemo.Common
 open WorkflowDemo.Common.Device
 
