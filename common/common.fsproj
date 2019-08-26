@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Common.fs" />
+    <Compile Include="DelayQueue.fs" />
   </ItemGroup>
 </Project>

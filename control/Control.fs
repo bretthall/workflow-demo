@@ -6,6 +6,7 @@ open Terminal.Gui
 open Terminal.Gui.Elmish
 
 open WorkflowDemo.Common
+open WorkflowDemo.Common.DelayQueue
 open WorkflowDemo.Workflow
 
 type Client = PipeClient.Client<Device.Msg, Control.Msg>
@@ -41,10 +42,12 @@ type Model = {
     state: State
 }
 
-let init client = {
-    client = client
-    state = NotRunning {selectedWorkflow = Workflows.Reset}
-}
+let init client =
+    let state = {
+        client = client
+        state = NotRunning {selectedWorkflow = Workflows.Reset}
+    }
+    state, Cmd.none
 
 type WorkflowMsg =
     | Start
@@ -126,9 +129,24 @@ let update msg model =
         | _ -> ()
     | _ -> ()
     match model.state with
-    | NotRunning state  -> {model with state = updateNotRunning state msg}
-    | Running state  -> {model with state = updateRunning state msg}
-    | Done state -> {model with state = updateDone state msg}
+    | NotRunning state  ->
+        let newState = {model with state = updateNotRunning state msg}
+        //TODO: just testing initial workflow implementation, get rid of this when the workflow runner is ready
+        let cmd = 
+            match msg with
+            | WorkflowMsg Start ->
+                Cmd.ofSub (fun dispatch ->
+                    let agent = delayQueue 25.0<ms> (fun msg -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (AddMsg msg))))
+                    async {
+                        Free.interpretTest agent.Post Workflows.reset
+                        do! Async.Sleep 1000
+                        Application.MainLoop.Invoke (Action (fun _ -> dispatch (WorkflowMsg Finish)))
+                    } |> Async.Start
+                )
+            | _ -> Cmd.none
+        newState, cmd
+    | Running state  -> {model with state = updateRunning state msg}, Cmd.none
+    | Done state -> {model with state = updateDone state msg}, Cmd.none
 
 let viewNotRunning state dispatch : List<View>=
     [
@@ -271,7 +289,7 @@ let main _ =
     printfn "Waiting for device to start up..."
     let client = Client (Common.pipeName)
     
-    Program.mkSimple init update view
+    Program.mkProgram init update view
     |> Program.withSubscription (fun model ->
             let sub dispatch =
                 model.client.MsgRecvd.Add (fun msg ->

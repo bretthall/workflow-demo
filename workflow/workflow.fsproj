@@ -5,7 +5,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Free.fs" />
     <Compile Include="workflows.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\common\common.fsproj" />
   </ItemGroup>
 
 </Project>

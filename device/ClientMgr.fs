@@ -16,7 +16,7 @@ type ClientMgr () =
         let rec loop curFoo = 
             async {
                 match! inbox.Receive() with
-                | ClientMgrMsg.NewClient (client, reply) -> 
+                | ClientMgrMsg.NewClient (_, reply) -> 
                     //client (Control.Foo curFoo)
                     reply.Reply ()
                     return! loop curFoo
