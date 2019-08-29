@@ -5,6 +5,11 @@ open WorkflowDemo.Common
 [<Measure>]
 type seconds
 
+[<Measure>]
+type ms
+
+let msInSeconds = 1000<ms/seconds>
+
 type WorkflowInstruction<'a> =
     | SetControlState of state:string * (unit -> 'a)
     | SetDeviceState of state:Device.State * (unit -> 'a)
@@ -15,7 +20,7 @@ type WorkflowInstruction<'a> =
     | GetDeviceInput of prompt:string * (string -> 'a)
     | CancelDeviceInput of unit * (unit -> 'a)
     | Wait of duration:int<seconds> * (unit -> 'a)
-    | WaitForData of dataValue:int * (unit -> 'a)
+    | WaitForData of minDataValue:int * (int -> 'a)
     | ResetData of unit * (unit -> 'a)
     | GetCurrentData of unit * (int -> 'a)
     
@@ -58,7 +63,7 @@ let clearDeviceMsgs msg = Free (ClearDeviceMsgs (msg, Pure))
 let getDeviceInput prompt = Free (GetDeviceInput (prompt, Pure))
 let cancelDeviceInput () = Free (CancelDeviceInput ((), Pure))
 let wait duration = Free (Wait (duration, Pure))
-let waitForData dataValue = Free (WaitForData (dataValue, Pure))
+let waitForData minDataValue = Free (WaitForData (minDataValue, Pure))
 let resetData () = Free (ResetData ((), Pure))
 let getCurrentData () = Free (GetCurrentData ((), Pure))
 
@@ -78,6 +83,6 @@ let rec interpretTest (send: string -> unit) program =
     | Free (GetDeviceInput (x, next)) -> x |> sendMessage "input" "GetDeviceInput"  |> next |> interpret
     | Free (CancelDeviceInput (x, next)) -> x |> sendMessage () "CancelDeviceInput"  |> next |> interpret
     | Free (Wait (x, next)) -> x |> sendMessage () "Wait"  |> next |> interpret
-    | Free (WaitForData (x, next)) -> x |> sendMessage () "WaitForData"  |> next |> interpret
+    | Free (WaitForData (x, next)) -> x |> sendMessage 10 "WaitForData"  |> next |> interpret
     | Free (ResetData (x, next)) -> x |> sendMessage () "ResetData"  |> next |> interpret
     | Free (GetCurrentData (x, next)) -> x |> sendMessage 1 "GetCurrentData"  |> next |> interpret
