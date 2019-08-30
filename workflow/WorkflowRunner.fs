@@ -366,8 +366,21 @@ type Runner<'a>(program: Free.WorkflowProgram<'a>) =
         }
 
     let programCancel = new CancellationTokenSource ()
-    let runProgram = async {
-        let! res = interpret program
-        agent.Post (RunnerAgentMsg.Finish res)
-    }    
-    do Async.Start (runProgram, programCancel.Token)
+    
+    member __.Start () =
+        let runProgram = async {
+            let! res = interpret program
+            agent.Post (RunnerAgentMsg.Finish res)
+        }    
+        do Async.Start (runProgram, programCancel.Token)
+
+    member __.Pause () = agent.Post Pause
+    member __.Resume () = agent.Post Resume
+    
+    member __.Cancel () =
+        programCancel.Cancel ()
+        agent.Post (RunnerAgentMsg.Cancel)
+    
+    member __.DataUpdate value = agent.Post (DataUpdate value |> Device)
+    member __.InputReceived input = agent.Post (InputReceived input |> Device)
+    
