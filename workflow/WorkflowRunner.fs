@@ -35,32 +35,6 @@ module private Internal =
         | Finish of 'a
         | Cancel
 
-//    type WaitState =
-//        | Started of start:DateTime * duration:int<Free.seconds>
-//        | Finished
-//        
-//    type WaitForDataState =
-//        | Started of minDataValue:int
-//        | Finished of dataValue: int
-//        
-//    type WaitForInputState =
-//        | Started of prompt:string
-//        | Finished of input:string
-//        
-//    type ActionResult =
-//        | SetControlState 
-//        | SetDeviceState
-//        | AddControlMsg 
-//        | ClearControlMsgs 
-//        | AddDeviceMsg 
-//        | ClearDeviceMsgs 
-//        | GetDeviceInput of WaitForInputState
-//        | CancelDeviceInput 
-//        | Wait of WaitState 
-//        | WaitForData of WaitForDataState
-//        | ResetData 
-//        | GetCurrentData of int
-    
     type WaitingForTimeState = {
         reply: AsyncReplyChannel<unit>
         timerIndex: int
@@ -89,7 +63,6 @@ module private Internal =
     type State = {
         workflowState: WorkflowState
         lastDataValue: int
-        //results: List<ActionResult>
     }
         
 open Internal
@@ -139,21 +112,6 @@ type Runner<'a>(program: Free.WorkflowProgram<'a>) =
             async {
                 let! msg = inbox.Receive()
                 let curData = updateData state.lastDataValue msg
-//                let! newWorkflowState, result =
-//                    match state.workflowState with
-//                    | RunningCommands -> runningCmds curData msg
-//                    | WaitingForInput reply -> waitingForInput reply msg
-//                    | WaitingForTime timeState -> waitingForTime timeState msg
-//                    | WaitingForData dataState -> waitingForData dataState msg
-//                    | Paused pauseState -> paused pauseState msg
-//                    | Done -> state, None
-//                let newResults =
-//                    match result with
-//                    | Some res -> res :: state.results
-//                    | None -> state.results
-                //let newState = {workflowState = newWorkflowState; results = newResults; lastDataValue = curData}
-//                if newState <> state then
-//                    do! saveState newState
                 match msg with
                 | RunnerAgentMsg.Pause ->
                     match state.workflowState with
