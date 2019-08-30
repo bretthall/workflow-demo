@@ -16,6 +16,8 @@ module Device =
         | RequestInput of string
         | CancelInput
         | AddMsg of string
+        | ClearMsgs
+        | ResetData
 
 module Control =
     

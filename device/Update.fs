@@ -13,6 +13,8 @@ let update (msg: Model.Message) (model: Model.Model) =
     | Device.RequestInput prompt -> {model with inputState = Some {prompt = prompt; current = ""}; msgs = "got start input" :: model.msgs}
     | Device.CancelInput -> {model with inputState = None; msgs = "got cancel input" :: model.msgs}
     | Device.AddMsg msg -> {model with msgs = msg :: model.msgs}
+    | Device.ClearMsgs -> {model with msgs = []}
+    | Device.ResetData -> {model with dataValue = 0}
   | Model.DataMsg dm ->
     match dm with
     | Model.IncData ->

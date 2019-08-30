@@ -6,7 +6,6 @@ open Terminal.Gui
 open Terminal.Gui.Elmish
 
 open WorkflowDemo.Common
-open WorkflowDemo.Common.DelayQueue
 open WorkflowDemo.Workflow
 
 type Client = PipeClient.Client<Device.Msg, Control.Msg>
@@ -14,10 +13,12 @@ type Client = PipeClient.Client<Device.Msg, Control.Msg>
 let workflowToText wf =
     match wf with
     | Workflows.Reset -> "Reset Device"
+    | Workflows.Test -> "Test"
     
 let workflows =
     [
         Workflows.Reset
+        Workflows.Test
     ] |> List.map (fun wf -> (wf, workflowToText wf))
 
 type NotRunningState = {
@@ -26,6 +27,7 @@ type NotRunningState = {
 
 type RunningState = {
     workflow: Workflows.Workflow
+    runner: WorkflowRunner.Runner
     state: string
     paused: bool
     lastDataValue: int
@@ -62,61 +64,91 @@ type Msg =
     | WorkflowMsg of WorkflowMsg
     | SetState of string
     | AddMsg of string
+    | ClearMsgs
     | Quit
 
-let updateNotRunning (state: NotRunningState) msg =
+let handleRunnerMsgs (client: Client) dispatch msg =
     match msg with
-    | ControlMsg _ -> NotRunning state
-    | WorkflowSelected wf -> NotRunning {state with selectedWorkflow = wf}
+    | WorkflowRunner.SetControlState state -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (SetState state))) 
+    | WorkflowRunner.SetDeviceState state -> client.Send (Device.SetState state) 
+    | WorkflowRunner.AddControlMsg msg -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (AddMsg msg)))
+    | WorkflowRunner.ClearControlMsgs -> Application.MainLoop.Invoke (Action (fun _ -> dispatch ClearMsgs))
+    | WorkflowRunner.AddDeviceMsg msg -> client.Send (Device.AddMsg msg)
+    | WorkflowRunner.ClearDeviceMsgs -> client.Send Device.ClearMsgs
+    | WorkflowRunner.StartDeviceInput prompt -> client.Send (Device.RequestInput prompt) 
+    | WorkflowRunner.CancelDeviceInput -> client.Send Device.CancelInput
+    | WorkflowRunner.ResetData -> client.Send Device.ResetData
+    | WorkflowRunner.Paused -> ()
+    | WorkflowRunner.Resumed -> ()
+    | WorkflowRunner.Cancelled -> ()
+    | WorkflowRunner.Finished -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (WorkflowMsg Finish)))
+
+let updateNotRunning client (state: NotRunningState) msg =
+    match msg with
+    | ControlMsg _ -> NotRunning state, Cmd.none
+    | WorkflowSelected wf -> NotRunning {state with selectedWorkflow = wf}, Cmd.none
     | WorkflowMsg m ->
         match m with
         | Start ->
+            let runner = WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow)            
+            let sub dispatch =
+                runner.Msgs.Add (handleRunnerMsgs client dispatch)
+                runner.Start ()
             Running {
                 workflow = state.selectedWorkflow
+                runner = runner
                 state = "Started"
                 paused = false
                 lastDataValue = 0
-                msgs = []                
-            }
-        | Pause _ | Stop | Finish | Reset -> NotRunning state
-    | SetState _ | AddMsg _ -> NotRunning state 
+                msgs = []
+            }, Cmd.ofSub sub
+        | _ -> NotRunning state, Cmd.none
     | Quit ->        
         Console.Clear ()
         Environment.Exit 0
-        NotRunning state
+        NotRunning state, Cmd.none
+    | _ -> NotRunning state, Cmd.none
     
 let updateRunning state msg =
     match msg with
     | ControlMsg m ->
         match m with
-        | Control.DataUpdate value -> Running {state with lastDataValue = value}
+        | Control.DataUpdate value ->
+            state.runner.DataUpdate value
+            Running {state with lastDataValue = value}
+        | Control.InputReceived input ->
+            state.runner.InputReceived input
+            Running state
         | _ -> Running state
-    | WorkflowSelected _ -> Running state
     | WorkflowMsg m ->
         match m with
         | Stop ->
+            state.runner.Cancel ()
             Done {
                state with
                 state = sprintf "%s (CANCELLED)" state.state
             }
         | Finish ->
             Done state
-        | Pause paused -> Running {state with paused = paused}
-        | Start | Reset -> Running state
+        | Pause paused ->
+            if paused then
+                state.runner.Pause ()
+            else
+                state.runner.Resume ()
+            Running {state with paused = paused}
+        | _ -> Running state
     | SetState value -> Running {state with state = value}
-    | AddMsg msg -> Running {state with msgs = msg :: state.msgs} 
-    | Quit -> Running state
+    | AddMsg msg -> Running {state with msgs = msg :: state.msgs}
+    | ClearMsgs -> Running {state with msgs = []}
+    | _ -> Running state
 
 let updateDone state msg =
     match msg with
-    | ControlMsg _ -> Done state
-    | WorkflowSelected _ -> Done state
     | WorkflowMsg m ->
         match m with
         | Reset -> NotRunning {selectedWorkflow = state.workflow}
-        | Start | Pause _ | Stop | Finish -> Done state
-    | SetState _ | AddMsg _ -> Done state
-    | Quit -> Done state
+        | _ -> Done state
+    | _ -> Done state
 
 let update msg model =
     match msg with
@@ -130,20 +162,8 @@ let update msg model =
     | _ -> ()
     match model.state with
     | NotRunning state  ->
-        let newState = {model with state = updateNotRunning state msg}
-        //TODO: just testing initial workflow implementation, get rid of this when the workflow runner is ready
-        let cmd = 
-            match msg with
-            | WorkflowMsg Start ->
-                Cmd.ofSub (fun dispatch ->
-                    let agent = delayQueue 25.0<ms> (fun msg -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (AddMsg msg))))
-                    async {
-                        Free.interpretTest agent.Post Workflows.reset
-                        do! Async.Sleep 1000
-                        Application.MainLoop.Invoke (Action (fun _ -> dispatch (WorkflowMsg Finish)))
-                    } |> Async.Start
-                )
-            | _ -> Cmd.none
+        let newRunState, cmd = updateNotRunning model.client state msg 
+        let newState = {model with state = newRunState}
         newState, cmd
     | Running state  -> {model with state = updateRunning state msg}, Cmd.none
     | Done state -> {model with state = updateDone state msg}, Cmd.none
