@@ -26,13 +26,13 @@ module private Internal =
         | DataUpdate of int
         | InputReceived of string
         
-    type RunnerAgentMsg<'a> =
+    type RunnerAgentMsg =
         | Action of ActionMsg
         | Device of DeviceMsg
         | TimerDone of int
         | Pause
         | Resume
-        | Finish of 'a
+        | Finish
         | Cancel
 
     type WaitingForTimeState = {
@@ -67,7 +67,7 @@ module private Internal =
         
 open Internal
 
-type RunnerMsg<'a> =
+type RunnerMsg =
     | SetControlState of state:string 
     | SetDeviceState of state:Device.State
     | AddControlMsg of msg:string 
@@ -80,13 +80,13 @@ type RunnerMsg<'a> =
     | Paused
     | Resumed
     | Cancelled
-    | Finished of 'a
+    | Finished
     
-type Runner<'a>(program: Free.WorkflowProgram<'a>) =
+type Runner(program: Free.WorkflowProgram<unit>) =
     
-    let msgs = Event<RunnerMsg<'a>> ()
+    let msgs = Event<RunnerMsg> ()
     
-    let agent = MailboxProcessor<RunnerAgentMsg<'a>>.Start(fun inbox ->
+    let agent = MailboxProcessor<RunnerAgentMsg>.Start(fun inbox ->
         
         let mutable timerIndex = 0
         let startTimer (duration: TimeSpan) =
@@ -134,8 +134,8 @@ type Runner<'a>(program: Free.WorkflowProgram<'a>) =
                         workflowState = Done
                         lastDataValue = state.lastDataValue
                     }
-                | RunnerAgentMsg.Finish res ->
-                    msgs.Trigger (RunnerMsg.Finished res)
+                | RunnerAgentMsg.Finish  ->
+                    msgs.Trigger RunnerMsg.Finished
                     return! loop {
                         workflowState = Done
                         lastDataValue = state.lastDataValue
@@ -327,8 +327,8 @@ type Runner<'a>(program: Free.WorkflowProgram<'a>) =
     
     member __.Start () =
         let runProgram = async {
-            let! res = interpret program
-            agent.Post (RunnerAgentMsg.Finish res)
+            do! interpret program
+            agent.Post RunnerAgentMsg.Finish
         }    
         do Async.Start (runProgram, programCancel.Token)
 
@@ -342,3 +342,4 @@ type Runner<'a>(program: Free.WorkflowProgram<'a>) =
     member __.DataUpdate value = agent.Post (DataUpdate value |> Device)
     member __.InputReceived input = agent.Post (InputReceived input |> Device)
     
+    member __.Msgs = msgs.Publish
