@@ -14,15 +14,18 @@ let workflowToText wf =
     match wf with
     | Workflows.Reset -> "Reset Device"
     | Workflows.Test -> "Test"
+    | Workflows.Wait -> "Wait"
     
 let workflows =
     [
         Workflows.Reset
         Workflows.Test
+        Workflows.Wait
     ] |> List.map (fun wf -> (wf, workflowToText wf))
 
 type NotRunningState = {
     selectedWorkflow: Workflows.Workflow
+    curData: int
 }
 
 type RunningState = {
@@ -30,7 +33,7 @@ type RunningState = {
     runner: WorkflowRunner.Runner
     state: string
     paused: bool
-    lastDataValue: int
+    curData: int
     msgs: List<string>
 }
 
@@ -47,7 +50,7 @@ type Model = {
 let init client =
     let state = {
         client = client
-        state = NotRunning {selectedWorkflow = Workflows.Reset}
+        state = NotRunning {selectedWorkflow = Workflows.Reset; curData = 0}
     }
     state, Cmd.none
 
@@ -97,12 +100,16 @@ let logMessage state msg =
 let updateNotRunning client (state: NotRunningState) msg =
     logMessage "not running" msg
     match msg with
-    | ControlMsg _ -> NotRunning state, Cmd.none
+    | ControlMsg m ->
+        match m with
+        | Control.DataUpdate value ->
+            NotRunning {state with curData = value}, Cmd.none
+        | _ -> NotRunning state, Cmd.none
     | WorkflowSelected wf -> NotRunning {state with selectedWorkflow = wf}, Cmd.none
     | WorkflowMsg m ->
         match m with
         | Start ->
-            let runner = WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow)            
+            let runner = WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow, state.curData)             
             let sub dispatch =
                 runner.Msgs.Add (handleRunnerMsgs client dispatch)
                 runner.Start ()
@@ -111,7 +118,7 @@ let updateNotRunning client (state: NotRunningState) msg =
                 runner = runner
                 state = "Started"
                 paused = false
-                lastDataValue = 0
+                curData = 0
                 msgs = []
             }, Cmd.ofSub sub
         | _ -> NotRunning state, Cmd.none
@@ -128,7 +135,7 @@ let updateRunning state msg =
         match m with
         | Control.DataUpdate value ->
             state.runner.DataUpdate value
-            Running {state with lastDataValue = value}
+            Running {state with curData = value}
         | Control.InputReceived input ->
             state.runner.InputReceived input
             Running state
@@ -160,7 +167,7 @@ let updateDone state msg =
     match msg with
     | WorkflowMsg m ->
         match m with
-        | Reset -> NotRunning {selectedWorkflow = state.workflow}
+        | Reset -> NotRunning {selectedWorkflow = state.workflow; curData = state.curData}
         | _ -> Done state
     | _ -> Done state
 
@@ -242,7 +249,7 @@ let viewRunning state dispatch : List<View> =
         
         let dataRow = stateRow + 1
         yield label [
-            Text (sprintf "Data: %d" state.lastDataValue)
+            Text (sprintf "Data: %d" state.curData)
             Styles [Pos (AbsPos 0, AbsPos dataRow)]
         ]
         
@@ -286,7 +293,7 @@ let viewDone state dispatch : List<View> =
         
         let dataRow = stateRow + 1
         yield label [
-            Text (sprintf "Data: %d" state.lastDataValue)
+            Text (sprintf "Data: %d" state.curData)
             Styles [Pos (AbsPos 0, AbsPos dataRow)]
         ]
         

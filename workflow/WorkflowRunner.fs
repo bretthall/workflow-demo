@@ -57,12 +57,14 @@ module private Internal =
         | Done
     and PausedState = {
         start: DateTime
+        nextAction: Option<ActionMsg>
+        input: Option<string>
         previousState: WorkflowState
     }
         
     type State = {
         workflowState: WorkflowState
-        lastDataValue: int
+        dataValue: int
     }
         
 open Internal
@@ -82,7 +84,7 @@ type RunnerMsg =
     | Cancelled
     | Finished
     
-type Runner(program: Free.WorkflowProgram<unit>) =
+type Runner(program: Free.WorkflowProgram<unit>, curData: int) =
     
     let log = NLog.LogManager.GetLogger "Runner"
     
@@ -120,86 +122,84 @@ type Runner(program: Free.WorkflowProgram<unit>) =
                 | _ -> log.Info (sprintf "Got message in %A with state %A" msg state)
             | _ -> log.Info (sprintf "Got message in %A with state %A" msg state)
                 
-        let rec loop state =
+        let rec waitForMessage state =
             async {
                 let! msg = inbox.Receive()
                 logMessage state msg
-                let curData = updateData state.lastDataValue msg
-                match msg with
-                | RunnerAgentMsg.Pause ->
-                    match state.workflowState with
-                    | WorkflowState.Paused _ | WorkflowState.Done -> return! loop state
-                    | _ ->
-                        match state.workflowState with
-                        | WorkflowState.WaitingForTime timeState  ->
-                            timeState.cancelTimer.Cancel ()
-                        | _ -> ()
-                        return! loop {
-                            workflowState = WorkflowState.Paused {
-                                start = DateTime.Now
-                                previousState  = state.workflowState
-                            }
-                            lastDataValue = state.lastDataValue
-                        }
-                | RunnerAgentMsg.Cancel ->
-                    msgs.Trigger (RunnerMsg.Cancelled)
-                    return! loop {
-                        workflowState = Done
-                        lastDataValue = state.lastDataValue
-                    }
-                | RunnerAgentMsg.Finish  ->
-                    msgs.Trigger RunnerMsg.Finished
-                    return! loop {
-                        workflowState = Done
-                        lastDataValue = state.lastDataValue
-                    }
-                | _ ->
-                    let newWorkflowState =
-                        match state.workflowState with
-                        | WorkflowState.RunningCommands -> runningCmds curData msg
-                        | WorkflowState.WaitingForInput reply -> waitingForInput reply msg
-                        | WorkflowState.WaitingForTime timeState -> waitingForTime timeState msg
-                        | WorkflowState.WaitingForData dataState -> waitingForData dataState msg
-                        | WorkflowState.Paused pauseState -> paused pauseState msg
-                        | WorkflowState.Done -> state.workflowState
-                    let newState = {workflowState = newWorkflowState; lastDataValue = curData}
-                    return! loop newState
+                return! waitForMessage (handleMessage state msg)
             }
-        and runningCmds curData msg =
+        and handleMessage state msg =
+            let newState = {state with dataValue = updateData state.dataValue msg}
+            match msg with
+            | RunnerAgentMsg.Pause ->
+                match newState.workflowState with
+                | WorkflowState.Paused _ | WorkflowState.Done -> newState
+                | _ ->
+                    match newState.workflowState with
+                    | WorkflowState.WaitingForTime timeState  ->
+                        timeState.cancelTimer.Cancel ()
+                    | _ -> ()
+                    {newState with
+                        workflowState = WorkflowState.Paused {
+                            start = DateTime.Now
+                            nextAction = None
+                            input = None
+                            previousState  = state.workflowState
+                        }
+                    }
+            | RunnerAgentMsg.Cancel ->
+                msgs.Trigger (RunnerMsg.Cancelled)
+                {newState with
+                    workflowState = Done
+                }
+            | RunnerAgentMsg.Finish  ->
+                msgs.Trigger RunnerMsg.Finished
+                {newState with 
+                    workflowState = Done
+                }
+            | _ ->
+                match state.workflowState with
+                | WorkflowState.RunningCommands -> runningCmds newState msg
+                | WorkflowState.WaitingForInput reply -> waitingForInput newState reply msg
+                | WorkflowState.WaitingForTime timeState -> waitingForTime newState timeState msg
+                | WorkflowState.WaitingForData dataState -> waitingForData newState dataState msg
+                | WorkflowState.Paused pauseState -> paused newState pauseState msg
+                | WorkflowState.Done -> newState
+        and runningCmds state msg =
             match msg with
             | Action action ->
                 match action with
-                | ActionMsg.SetControlState (state, reply) ->
-                    msgs.Trigger (RunnerMsg.SetControlState state)
+                | ActionMsg.SetControlState (controlState, reply) ->
+                    msgs.Trigger (RunnerMsg.SetControlState controlState)
                     reply.Reply ()
-                    RunningCommands
-                | ActionMsg.SetDeviceState (state, reply) ->
-                    msgs.Trigger (RunnerMsg.SetDeviceState state)
+                    state
+                | ActionMsg.SetDeviceState (deviceState, reply) ->
+                    msgs.Trigger (RunnerMsg.SetDeviceState deviceState)
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.AddControlMsg (m, reply) ->
                     msgs.Trigger (RunnerMsg.AddControlMsg m)
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.ClearControlMsgs reply ->
                     msgs.Trigger RunnerMsg.ClearControlMsgs
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.AddDeviceMsg (m, reply) ->
                     msgs.Trigger (RunnerMsg.AddDeviceMsg m)
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.ClearDeviceMsgs reply ->
                     msgs.Trigger RunnerMsg.ClearDeviceMsgs
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.GetDeviceInput (prompt, reply) ->
                     msgs.Trigger (RunnerMsg.StartDeviceInput prompt)
-                    WaitingForInput reply
+                    {state with workflowState = WaitingForInput reply}
                 | ActionMsg.CancelDeviceInput reply ->
                     msgs.Trigger (RunnerMsg.CancelDeviceInput)
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.Wait (duration, reply) ->
                     let now = DateTime.Now
                     let waitDuration = (int duration |> float |> TimeSpan.FromSeconds)
@@ -211,22 +211,22 @@ type Runner(program: Free.WorkflowProgram<unit>) =
                         duration = waitDuration
                         start = now
                     }
-                    WaitingForTime waitState
+                    {state with workflowState = WaitingForTime waitState}
                 | ActionMsg.WaitForData (minDataValue, reply) ->
                     let waitState = {
                         reply = reply
                         minDataValue = minDataValue
                     }
-                    WaitingForData waitState
+                    {state with workflowState = WaitingForData waitState}
                 | ActionMsg.ResetData reply ->
                     msgs.Trigger RunnerMsg.ResetData
                     reply.Reply ()
-                    RunningCommands
+                    state
                 | ActionMsg.GetCurrentData reply ->
-                    reply.Reply curData
-                    RunningCommands
-            | _ -> RunningCommands                
-        and waitingForInput reply msg =
+                    reply.Reply state.dataValue
+                    state
+            | _ -> state                
+        and waitingForInput state reply msg =
             match msg with
             | Action a ->
                 failwith (sprintf "Got action %A while waiting for input" a)
@@ -234,24 +234,24 @@ type Runner(program: Free.WorkflowProgram<unit>) =
                 match d with
                 | InputReceived input ->
                     reply.Reply input
-                    RunningCommands
+                    {state with workflowState = RunningCommands}
                 | _ ->
-                    WaitingForInput reply
+                    state
             | _ ->
-                WaitingForInput reply
-        and waitingForTime timeState msg =
+                state
+        and waitingForTime state timeState msg =
             match msg with
             | Action a ->
                 failwith (sprintf "Got action %A while waiting for time" a)
             | TimerDone index ->
                 if index = timeState.timerIndex then
                     timeState.reply.Reply ()
-                    RunningCommands
+                    {state with workflowState = RunningCommands}
                 else
-                    WaitingForTime timeState
+                    state
             | _ -> 
-                WaitingForTime timeState
-        and waitingForData dataState msg =
+                state
+        and waitingForData state dataState msg =
             match msg with
             | Action a ->
                 failwith (sprintf "Got action %A while waiting for data" a)                
@@ -260,37 +260,63 @@ type Runner(program: Free.WorkflowProgram<unit>) =
                 | DataUpdate value ->
                     if value >= dataState.minDataValue then
                         dataState.reply.Reply value
-                        RunningCommands
+                        {state with workflowState = RunningCommands}
                     else
-                        WaitingForData dataState
+                        state
                 | _ ->
-                    WaitingForData dataState
+                    state
             | _ -> 
-                WaitingForData dataState
-        and paused (pauseState: PausedState) msg =
+                state
+        and paused state (pauseState: PausedState) msg =
             match msg with
             | Action a ->
-                failwith (sprintf "Got action %A while paused" a)                
+                match pauseState.nextAction with
+                | None ->
+                    {state with workflowState = WorkflowState.Paused {pauseState with nextAction = Some a}}
+                | Some _ -> 
+                    failwith (sprintf "Got second action %A while paused" a)
+            | Device d ->
+                match d with
+                | DeviceMsg.InputReceived input -> {state with workflowState = WorkflowState.Paused {pauseState with input = Some input}}
+                | _ -> state
             | Resume ->
+                handleResume state pauseState
+            | _ ->
+                state
+        and handleResume state pauseState =
+            let newState = 
                 match pauseState.previousState with
                 | WaitingForTime timeState ->
                     let now = DateTime.Now
                     let newStart = timeState.start.Add (now - pauseState.start)
                     let diff = now - newStart
                     let cancel, index = startTimer (timeState.duration - diff)
-                    WaitingForTime {
-                        timeState with
-                            timerIndex = index
-                            cancelTimer = cancel
-                            start = newStart
-                    }
+                    {state with
+                        workflowState =
+                            WaitingForTime {
+                                timeState with
+                                    timerIndex = index
+                                    cancelTimer = cancel
+                                    start = newStart
+                    }}
+                | WaitingForData dataState ->                    
+                    let newState = {state with workflowState = pauseState.previousState}
+                    waitingForData newState dataState (DeviceMsg.DataUpdate state.dataValue |> Device)
+                | WaitingForInput inputState ->
+                    match pauseState.input with
+                    | Some input ->
+                        let newState = {state with workflowState = pauseState.previousState}
+                        waitingForInput newState inputState (DeviceMsg.InputReceived input |> Device)
+                    | None ->
+                        {state with workflowState = pauseState.previousState}                    
                 | _ ->
-                    pauseState.previousState
-            | _ ->
-                WorkflowState.Paused pauseState
-        loop {
+                    {state with workflowState = pauseState.previousState}
+            match pauseState.nextAction with
+            | None -> newState
+            | Some action -> handleMessage newState (Action action)                
+        waitForMessage {
             workflowState = RunningCommands
-            lastDataValue = 0
+            dataValue = curData
         }
     )
     
