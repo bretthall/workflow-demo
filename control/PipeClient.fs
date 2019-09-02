@@ -6,18 +6,25 @@ open MBrace.FsPickler
 
 type ClientMsg<'msg> = 
     | Send of 'msg
-    | Stop 
+    | Stop
+    
+let private log = NLog.LogManager.GetLogger "PipeClient"
 
 type Client<'outMsg, 'inMsg>(pipeName: string) = 
     
     let msgRecvd = Event<'inMsg> ()
 
+    do log.Info (sprintf "Connecting to pipe '%s'" pipeName)
+    
     let pipe = new IO.Pipes.NamedPipeClientStream (".", pipeName, IO.Pipes.PipeDirection.InOut)
-    do pipe.Connect ()
+    do
+        pipe.Connect ()
+        log.Info "Connected to pipe"
     let queue = BufferBlock<ClientMsg<'outMsg>> ()  
     let pickler = FsPickler.CreateBinarySerializer ()
     do
         async {
+            log.Info "Starting serializer"
             try 
                 pickler.SerializeSequence (
                     pipe, 
@@ -29,16 +36,20 @@ type Client<'outMsg, 'inMsg>(pipeName: string) =
                     )
                 ) |> ignore
             with
-            | _ -> 
+            | exc ->
+                log.Info (sprintf "Closing pipe: %A" exc)
                 pipe.Close ()
         } |> Async.Start
     do 
         async {
+            log.Info "Starting deserializer"
             try
                 for msg in pickler.DeserializeSequence<'inMsg>(pipe) do
                     msgRecvd.Trigger(msg)
             with
-            | _ -> () //closing pipe handled in sending async above
+            | exc ->
+                log.Info (sprintf "Deserializer stopping: %A" exc)
+                () //closing pipe handled in sending async above
         } |> Async.Start
         
 

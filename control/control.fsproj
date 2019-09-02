@@ -23,6 +23,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="fspickler" Version="5.2.2" />
+    <PackageReference Include="NLog" Version="4.6.7" />
     <PackageReference Include="Nstack.core" Version="0.12.0" />
     <PackageReference Include="Terminal.Gui" Version="0.24.0" />
     <PackageReference Include="Terminal.Gui.Elmish" Version="0.1.3" />

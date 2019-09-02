@@ -66,8 +66,10 @@ type Msg =
     | AddMsg of string
     | ClearMsgs
     | Quit
+let private log = NLog.LogManager.GetLogger "Update"
 
 let handleRunnerMsgs (client: Client) dispatch msg =
+    log.Info (sprintf "Got runner msg: %A" msg)
     match msg with
     | WorkflowRunner.SetControlState state -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (SetState state))) 
     | WorkflowRunner.SetDeviceState state -> client.Send (Device.SetState state) 
@@ -83,7 +85,17 @@ let handleRunnerMsgs (client: Client) dispatch msg =
     | WorkflowRunner.Cancelled -> ()
     | WorkflowRunner.Finished -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (WorkflowMsg Finish)))
 
+
+let logMessage state msg =
+    match msg with
+    | ControlMsg m ->
+        match m with
+        | Control.DataUpdate _ -> () //skipping data updates because they spam the log 
+        | _ -> log.Info (sprintf "Got update message when %s: %A" state msg)
+    | _ -> log.Info (sprintf "Got update message: %A" msg)
+    
 let updateNotRunning client (state: NotRunningState) msg =
+    logMessage "not running" msg
     match msg with
     | ControlMsg _ -> NotRunning state, Cmd.none
     | WorkflowSelected wf -> NotRunning {state with selectedWorkflow = wf}, Cmd.none
@@ -110,6 +122,7 @@ let updateNotRunning client (state: NotRunningState) msg =
     | _ -> NotRunning state, Cmd.none
     
 let updateRunning state msg =
+    logMessage "running" msg
     match msg with
     | ControlMsg m ->
         match m with
@@ -143,6 +156,7 @@ let updateRunning state msg =
     | _ -> Running state
 
 let updateDone state msg =
+    logMessage "done" msg
     match msg with
     | WorkflowMsg m ->
         match m with
@@ -306,8 +320,23 @@ let view model dispatch =
     
 [<EntryPoint>]
 let main _ =
+    let config = new NLog.Config.LoggingConfiguration ()
+    let target = new NLog.Targets.FileTarget (name = "file",
+                                              FileName = NLog.Layouts.Layout.FromString "control.log",
+                                              DeleteOldFileOnStartup = true,
+                                              KeepFileOpen = true)
+    config.AddTarget target
+    config.AddRuleForAllLevels (target, "*")
+    NLog.LogManager.Configuration <- config
+    
+    let log = NLog.LogManager.GetLogger "main"
+    log.Info "Waiting for device..."
+    
+    printfn "Working directory: %s" Environment.CurrentDirectory
     printfn "Waiting for device to start up..."
     let client = Client (Common.pipeName)
+    
+    log.Info (sprintf "Connected to device on %s" Common.pipeName)
     
     Program.mkProgram init update view
     |> Program.withSubscription (fun model ->

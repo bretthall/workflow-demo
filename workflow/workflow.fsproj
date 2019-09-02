@@ -22,4 +22,8 @@
     <ProjectReference Include="..\common\common.fsproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="NLog" Version="4.6.7" />
+  </ItemGroup>
+
 </Project>

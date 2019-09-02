@@ -84,6 +84,8 @@ type RunnerMsg =
     
 type Runner(program: Free.WorkflowProgram<unit>) =
     
+    let log = NLog.LogManager.GetLogger "Runner"
+    
     let msgs = Event<RunnerMsg> ()
     
     let agent = MailboxProcessor<RunnerAgentMsg>.Start(fun inbox ->
@@ -93,7 +95,9 @@ type Runner(program: Free.WorkflowProgram<unit>) =
             let index = timerIndex
             timerIndex <- timerIndex + 1
             let comp = async {
+                log.Info (sprintf "Started timer %d with duration %A" index duration)
                 do! Async.Sleep (int duration.TotalMilliseconds)
+                log.Info (sprintf "Timer %d done" index)
                 inbox.Post (TimerDone index)
             }
             let cancel = new CancellationTokenSource ()
@@ -108,9 +112,18 @@ type Runner(program: Free.WorkflowProgram<unit>) =
                 | _ -> curData 
             | _ -> curData 
             
+        let logMessage state msg =
+            match msg with
+            | RunnerAgentMsg.Device d ->
+                match d with
+                | DeviceMsg.DataUpdate _ -> ()
+                | _ -> log.Info (sprintf "Got message in %A with state %A" msg state)
+            | _ -> log.Info (sprintf "Got message in %A with state %A" msg state)
+                
         let rec loop state =
             async {
                 let! msg = inbox.Receive()
+                logMessage state msg
                 let curData = updateData state.lastDataValue msg
                 match msg with
                 | RunnerAgentMsg.Pause ->
@@ -281,45 +294,73 @@ type Runner(program: Free.WorkflowProgram<unit>) =
         }
     )
     
+    let interpLog = NLog.LogManager.GetLogger "Runner.Interp"
+    
     let rec interpret program =
         async {
             match program with
-            | Free.Pure x -> return x
+            | Free.Pure x ->
+                interpLog.Info (sprintf "Pure %A" x)
+                return x
             | Free.Free (Free.SetControlState (state, next)) ->
+                interpLog.Info (sprintf "SetControlState %A" state)
                 let! res =  agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.SetControlState (state, r)))
+                interpLog.Info (sprintf "SetControlState %A result: %A" state res)
                 return! res |> next |> interpret
             | Free.Free (Free.SetDeviceState (state, next)) -> 
+                interpLog.Info (sprintf "SetDeviceState %A" state)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.SetDeviceState (state, r)))
+                interpLog.Info (sprintf "SetControlState %A done" state)
                 return! () |> next |> interpret
             | Free.Free (Free.AddControlMsg (msg, next)) -> 
+                interpLog.Info (sprintf "AddControlMsg %A" msg)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.AddControlMsg (msg, r)))
+                interpLog.Info (sprintf "AddControlMsg %A done" msg)
                 return! () |> next |> interpret
             | Free.Free (Free.ClearControlMsgs ((), next)) -> 
+                interpLog.Info "ClearControlMsgs"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ClearControlMsgs r))
+                interpLog.Info "ClearControlMsgs done"
                 return! () |> next |> interpret
             | Free.Free (Free.AddDeviceMsg (msg, next)) -> 
+                interpLog.Info (sprintf "AddDeviceMsg %A" msg)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.AddDeviceMsg (msg, r)))
+                interpLog.Info (sprintf "AddDeviceMsg %A done" msg)
                 return! () |> next |> interpret
             | Free.Free (Free.ClearDeviceMsgs ((), next)) -> 
+                interpLog.Info "ClearDeviceMsgs"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ClearDeviceMsgs r))
+                interpLog.Info "ClearDeviceMsgs done"
                 return! () |> next |> interpret
             | Free.Free (Free.GetDeviceInput (prompt, next)) -> 
+                interpLog.Info (sprintf "GetDeviceInput %A" prompt)
                 let! input = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.GetDeviceInput (prompt, r)))
+                interpLog.Info (sprintf "GetDeviceInput %A result: %s" prompt input)
                 return! input |> next |> interpret
             | Free.Free (Free.CancelDeviceInput ((), next)) -> 
+                interpLog.Info "CancelDeviceInput"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.CancelDeviceInput r))
+                interpLog.Info "CancelDeviceInput done"
                 return! () |> next |> interpret
             | Free.Free (Free.Wait (duration, next)) ->
+                interpLog.Info (sprintf "Wait %A" duration)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.Wait (duration, r)))
+                interpLog.Info (sprintf "Wait %A done" duration)
                 return! () |> next |> interpret
             | Free.Free (Free.WaitForData (minDataValue, next)) ->
+                interpLog.Info (sprintf "Wait %A" minDataValue)
                 let! value = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.WaitForData (minDataValue, r)))
+                interpLog.Info (sprintf "Wait %A done" minDataValue)
                 return! value |> next |> interpret                
             | Free.Free (Free.ResetData ((), next)) -> 
+                interpLog.Info "ResetData"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ResetData r))
+                interpLog.Info "ResetData done"
                 return! () |> next |> interpret
             | Free.Free (Free.GetCurrentData ((), next)) -> 
+                interpLog.Info "GetCurrentData"
                 let! value = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.GetCurrentData r))
+                interpLog.Info (sprintf "GetCurrentData result: %A" value)
                 return! value |> next |> interpret                    
         }
 
@@ -327,7 +368,9 @@ type Runner(program: Free.WorkflowProgram<unit>) =
     
     member __.Start () =
         let runProgram = async {
+            log.Info "Starting workflow"
             do! interpret program
+            log.Info "Workflow done"
             agent.Post RunnerAgentMsg.Finish
         }    
         do Async.Start (runProgram, programCancel.Token)
@@ -336,6 +379,7 @@ type Runner(program: Free.WorkflowProgram<unit>) =
     member __.Resume () = agent.Post Resume
     
     member __.Cancel () =
+        log.Info "Cancelled"
         programCancel.Cancel ()
         agent.Post (RunnerAgentMsg.Cancel)
     
