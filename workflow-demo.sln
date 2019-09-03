@@ -11,6 +11,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "common", "common\common.fsp
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "workflow", "workflow\workflow.fsproj", "{A5AA8942-644F-4132-BDD7-875360E7B0CB}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "test", "test\test.fsproj", "{9F87D489-189F-4F85-8199-2148FF6ED0EC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -72,5 +74,17 @@ Global
 		{A5AA8942-644F-4132-BDD7-875360E7B0CB}.Release|x64.Build.0 = Release|Any CPU
 		{A5AA8942-644F-4132-BDD7-875360E7B0CB}.Release|x86.ActiveCfg = Release|Any CPU
 		{A5AA8942-644F-4132-BDD7-875360E7B0CB}.Release|x86.Build.0 = Release|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Debug|x64.Build.0 = Debug|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Debug|x86.Build.0 = Debug|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Release|x64.ActiveCfg = Release|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Release|x64.Build.0 = Release|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Release|x86.ActiveCfg = Release|Any CPU
+		{9F87D489-189F-4F85-8199-2148FF6ED0EC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
