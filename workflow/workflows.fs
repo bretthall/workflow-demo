@@ -65,12 +65,26 @@ let recurseIndeterminant =
         do! addControlMsg (sprintf "Got %d inputs" num)
     }
     
+let recurseWithFold = workflow {
+    let! num = 
+        (0, [Device.Good; Device.Bad; Device.Ugly]) ||> fold (
+            fun s t ->
+                workflow {
+                    do! setDeviceState t
+                    do! Free.wait 5<seconds>
+                    return (s + 1)           
+                }
+        )
+    do! addControlMsg (sprintf "Did %d state changes" num)
+}
+
 type Workflow =
     | Reset
     | Wait
     | Choice
     | RecurseDeterminant
     | RecurseIndeterminant
+    | RecurseWithFold
     
 let getProgram workflow =
     match workflow with
@@ -79,3 +93,4 @@ let getProgram workflow =
     | Choice -> choice
     | RecurseDeterminant -> recurseDeterminant
     | RecurseIndeterminant -> recurseIndeterminant
+    | RecurseWithFold -> recurseWithFold

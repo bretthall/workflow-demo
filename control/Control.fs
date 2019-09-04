@@ -17,6 +17,7 @@ let workflowToText wf =
     | Workflows.Choice -> "Choice"
     | Workflows.RecurseDeterminant -> "Determinant Recursion"
     | Workflows.RecurseIndeterminant -> "Indeterminant Recursion"
+    | Workflows.RecurseWithFold -> "Fold Recursion"
     
 let workflows =
     [
@@ -25,6 +26,7 @@ let workflows =
         Workflows.Choice
         Workflows.RecurseDeterminant
         Workflows.RecurseIndeterminant
+        Workflows.RecurseWithFold
     ] |> List.map (fun wf -> (wf, workflowToText wf))
 
 type NotRunningState = {

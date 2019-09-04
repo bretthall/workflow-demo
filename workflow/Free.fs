@@ -54,6 +54,17 @@ type WorkflowBuilder () =
     
 let workflow = WorkflowBuilder ()
 
+let fold (f: 'State -> 'T -> WorkflowProgram<'State>) (init:'State) (values: seq<'T>) =
+    let rec step state remaining =
+        workflow {
+            if Seq.isEmpty remaining then
+                return state
+            else
+                let! newState = f state (Seq.head remaining)    
+                return! step newState (Seq.tail remaining)
+        }
+    step init values
+    
 let setControlState state = Free (SetControlState (state, Pure))
 let setDeviceState state = Free (SetDeviceState (state, Pure))
 let addControlMsg msg = Free (AddControlMsg (msg, Pure))
