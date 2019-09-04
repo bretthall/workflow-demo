@@ -3,11 +3,6 @@
 open Free
 open WorkflowDemo.Common
 
-type Workflow =
-    | Reset
-    | Test
-    | Wait
-    
 let reset = workflow {
     do! setDeviceState Device.Good
     do! addControlMsg "Set device state"
@@ -17,12 +12,6 @@ let reset = workflow {
     do! addControlMsg "cancelled input"
     do! resetData ()
     do! addControlMsg "reset date"
-}
-
-let test = workflow {
-    do! setDeviceState Device.Bad
-    do! addDeviceMsg "Testing 1 2 3"
-    do! addControlMsg "test done"
 }
 
 let wait = workflow {
@@ -42,8 +31,51 @@ let wait = workflow {
     do! setDeviceState Device.Good
 }
 
+let choice = workflow {
+    let! input = getDeviceInput "Path A or B?"
+    if input = "A" then
+        do! addControlMsg "Chose path A"
+    else if input = "B" then
+        do! addControlMsg "Chose path B"
+    else
+        do! addControlMsg (sprintf "Chose other path: %s" input)
+}
+
+let recurseDeterminant =
+    let rec step index = workflow {
+        if index <= 10 then 
+            do! addControlMsg (sprintf "repeat number %d" index)
+            return! step (index + 1)
+        else
+            return ()
+    }
+    step 1
+    
+let recurseIndeterminant =
+    let rec getInput index = workflow {
+        let! input = getDeviceInput "Input (\"stop\" to stop)"
+        if input.ToLower () <> "stop" then
+            do! addControlMsg (sprintf "Input %d: %s" index input)
+            return! getInput (index + 1)
+        else
+            return index - 1
+    }
+    workflow {
+        let! num = getInput 1
+        do! addControlMsg (sprintf "Got %d inputs" num)
+    }
+    
+type Workflow =
+    | Reset
+    | Wait
+    | Choice
+    | RecurseDeterminant
+    | RecurseIndeterminant
+    
 let getProgram workflow =
     match workflow with
     | Reset -> reset
-    | Test -> test
     | Wait -> wait
+    | Choice -> choice
+    | RecurseDeterminant -> recurseDeterminant
+    | RecurseIndeterminant -> recurseIndeterminant

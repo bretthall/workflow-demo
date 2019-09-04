@@ -13,14 +13,18 @@ type Client = PipeClient.Client<Device.Msg, Control.Msg>
 let workflowToText wf =
     match wf with
     | Workflows.Reset -> "Reset Device"
-    | Workflows.Test -> "Test"
     | Workflows.Wait -> "Wait"
+    | Workflows.Choice -> "Choice"
+    | Workflows.RecurseDeterminant -> "Determinant Recursion"
+    | Workflows.RecurseIndeterminant -> "Indeterminant Recursion"
     
 let workflows =
     [
         Workflows.Reset
-        Workflows.Test
         Workflows.Wait
+        Workflows.Choice
+        Workflows.RecurseDeterminant
+        Workflows.RecurseIndeterminant
     ] |> List.map (fun wf -> (wf, workflowToText wf))
 
 type NotRunningState = {
