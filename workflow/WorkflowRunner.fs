@@ -3,11 +3,33 @@ module WorkflowDemo.Workflow.WorkflowRunner
 open System.Threading
 open System
 
+open MBrace.FsPickler
+
 open WorkflowDemo.Workflow
 open WorkflowDemo.Common
 
 module private Internal = 
     
+    type WorkflowResult =
+        | SetControlState of unit
+        | SetDeviceState of unit
+        | AddControlMsg of unit
+        | ClearControlMsgs of unit
+        | AddDeviceMsg of unit
+        | ClearDeviceMsgs of unit
+        | GetDeviceInput of string
+        | CancelDeviceInput of unit
+        | WaitStart of start:DateTime * duration:int<Free.seconds>
+        | Wait of unit
+        | WaitForData of int
+        | ResetData of unit
+        | GetCurrentData of int
+        | Pause of start:DateTime
+
+    type WorkflowResultMsg =
+        | NewResult of WorkflowResult * AsyncReplyChannel<unit>
+        | Resume of resumeTime:DateTime * AsyncReplyChannel<unit>
+        
     type ActionMsg =
         | SetControlState of state:string * AsyncReplyChannel<unit>
         | SetDeviceState of state:Device.State * AsyncReplyChannel<unit>
@@ -319,75 +341,129 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int) =
             dataValue = curData
         }
     )
+    let pickler = FsPickler.CreateBinarySerializer ()
+    let stateFile = "workflow-state"
     
+    let saveState results =
+        let bytes = pickler.Pickle results
+        System.IO.File.WriteAllBytes (stateFile, bytes)
+        
+    let saveAgent = MailboxProcessor<WorkflowResultMsg>.Start (fun inbox ->
+        let rec handler results =
+            async {
+                match! inbox.Receive () with
+                | WorkflowResultMsg.NewResult (result, reply) ->
+                    let curPause, results =
+                        match List.tryHead results with
+                        | Some (WorkflowResult.Pause startTime) -> Some (WorkflowResult.Pause startTime), List.tail results
+                        | _ -> None, results                                                
+                    let results =
+                        match result with
+                        | WorkflowResult.Wait _ ->
+                            match List.tryHead results with
+                            | Some (WaitStart _) -> result :: (List.tail results)
+                            | _ -> failwith "Got wait finish without a corresponding wait start"
+                        | WorkflowResult.Pause startTime ->
+                            match curPause with
+                            | None -> result :: results
+                            | _ -> failwith "Got pause when already paused"
+                         | _ ->
+                             result :: results 
+                    let results =
+                        match curPause with
+                        | Some pause -> pause :: results
+                        | None -> results                        
+                    saveState results
+                    reply.Reply ()
+                    return! handler results
+                | WorkflowResultMsg.Resume (resumeTime, reply) ->
+                    let results = 
+                        match List.tryHead results with
+                        | Some (WorkflowResult.Pause pauseTime) ->
+                            let results = List.tail results
+                            match List.tryHead results with
+                            | Some (WaitStart (startTime, duration)) ->
+                                let newStart = startTime.Add (resumeTime - pauseTime)
+                                (WorkflowResult.WaitStart (newStart, duration) :: (List.tail results))
+                            | _ ->
+                                results
+                        | _ ->
+                            failwith "Got resume without corresponding pause"
+                    saveState results
+                    reply.Reply ()
+                    return! handler results
+            }
+        handler []
+    )
     let interpLog = NLog.LogManager.GetLogger "Runner.Interp"
-    
-    let rec interpret program =
+        
+    let rec interpret prevResults program =
         async {
             match program with
             | Free.Pure x ->
                 interpLog.Info (sprintf "Pure %A" x)
+                //Don't bother saving state here, workflow is done
                 return x
             | Free.Free (Free.SetControlState (state, next)) ->
                 interpLog.Info (sprintf "SetControlState %A" state)
                 let! res =  agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.SetControlState (state, r)))
                 interpLog.Info (sprintf "SetControlState %A result: %A" state res)
-                return! res |> next |> interpret
+                return! res |> next |> interpret (saveState prevResults (WorkflowResult.SetControlState ()))
             | Free.Free (Free.SetDeviceState (state, next)) -> 
                 interpLog.Info (sprintf "SetDeviceState %A" state)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.SetDeviceState (state, r)))
                 interpLog.Info (sprintf "SetControlState %A done" state)
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.SetDeviceState ()))
             | Free.Free (Free.AddControlMsg (msg, next)) -> 
                 interpLog.Info (sprintf "AddControlMsg %A" msg)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.AddControlMsg (msg, r)))
                 interpLog.Info (sprintf "AddControlMsg %A done" msg)
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.AddControlMsg ()))
             | Free.Free (Free.ClearControlMsgs ((), next)) -> 
                 interpLog.Info "ClearControlMsgs"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ClearControlMsgs r))
                 interpLog.Info "ClearControlMsgs done"
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.ClearControlMsgs ()))
             | Free.Free (Free.AddDeviceMsg (msg, next)) -> 
                 interpLog.Info (sprintf "AddDeviceMsg %A" msg)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.AddDeviceMsg (msg, r)))
                 interpLog.Info (sprintf "AddDeviceMsg %A done" msg)
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.AddDeviceMsg ()))
             | Free.Free (Free.ClearDeviceMsgs ((), next)) -> 
                 interpLog.Info "ClearDeviceMsgs"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ClearDeviceMsgs r))
                 interpLog.Info "ClearDeviceMsgs done"
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.ClearDeviceMsgs ()))
             | Free.Free (Free.GetDeviceInput (prompt, next)) -> 
                 interpLog.Info (sprintf "GetDeviceInput %A" prompt)
                 let! input = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.GetDeviceInput (prompt, r)))
                 interpLog.Info (sprintf "GetDeviceInput %A result: %s" prompt input)
-                return! input |> next |> interpret
+                return! input |> next |> interpret (saveState prevResults (WorkflowResult.GetDeviceInput input))
             | Free.Free (Free.CancelDeviceInput ((), next)) -> 
                 interpLog.Info "CancelDeviceInput"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.CancelDeviceInput r))
                 interpLog.Info "CancelDeviceInput done"
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.CancelDeviceInput ()))
             | Free.Free (Free.Wait (duration, next)) ->
                 interpLog.Info (sprintf "Wait %A" duration)
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.Wait (duration, r)))
                 interpLog.Info (sprintf "Wait %A done" duration)
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.Wait ()))
             | Free.Free (Free.WaitForData (minDataValue, next)) ->
                 interpLog.Info (sprintf "Wait %A" minDataValue)
                 let! value = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.WaitForData (minDataValue, r)))
                 interpLog.Info (sprintf "Wait %A done" minDataValue)
-                return! value |> next |> interpret                
+                return! value |> next |> interpret (saveState prevResults (WorkflowResult.WaitForData value))
             | Free.Free (Free.ResetData ((), next)) -> 
                 interpLog.Info "ResetData"
                 do! agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ResetData r))
                 interpLog.Info "ResetData done"
-                return! () |> next |> interpret
+                return! () |> next |> interpret (saveState prevResults (WorkflowResult.ResetData ()))
             | Free.Free (Free.GetCurrentData ((), next)) -> 
                 interpLog.Info "GetCurrentData"
                 let! value = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.GetCurrentData r))
                 interpLog.Info (sprintf "GetCurrentData result: %A" value)
-                return! value |> next |> interpret                    
+                return! value |> next |> interpret (saveState prevResults (WorkflowResult.GetCurrentData value))
         }
 
     let programCancel = new CancellationTokenSource ()
@@ -395,7 +471,7 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int) =
     member __.Start () =
         let runProgram = async {
             log.Info "Starting workflow"
-            do! interpret program
+            do! interpret [] program
             log.Info "Workflow done"
             agent.Post RunnerAgentMsg.Finish
         }    
