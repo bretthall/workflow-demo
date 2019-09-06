@@ -115,10 +115,10 @@ let updateNotRunning client (state: NotRunningState) msg =
     | WorkflowMsg m ->
         match m with
         | Start ->
-            let runner = WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow, state.curData)             
+            let runner = WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow, state.curData, fun _ -> ())             
             let sub dispatch =
                 runner.Msgs.Add (handleRunnerMsgs client dispatch)
-                runner.Start ()
+                runner.Start (WorkflowRunner.defaultRunnerState)
             Running {
                 workflow = state.selectedWorkflow
                 runner = runner
