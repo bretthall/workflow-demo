@@ -14,7 +14,7 @@ let msInSeconds = 1000<ms/seconds>
 /// is the instructions argument (use unit for instructions that don't have arguments). The second member of the pair
 /// is a function that takes the result type of the instruction (use unit if the instruction has no result) and returns
 /// the type 'a. To add a new instruction just add a case to this DU, then update all the broken match expressions and
-/// add a convenience function for the instruction below.
+/// add a convenience function for the instruction below in the Actions module.
 type WorkflowInstruction<'a> =
     | SetControlState of state:string * (unit -> 'a)
     | SetDeviceState of state:Device.State * (unit -> 'a)
@@ -80,19 +80,20 @@ let fold (f: 'State -> 'T -> WorkflowProgram<'State>) (init:'State) (values: seq
         }
     step init values
     
-// These are convenience functions for use in the workflow computation expression.
-let setControlState state = Free (SetControlState (state, Pure))
-let setDeviceState state = Free (SetDeviceState (state, Pure))
-let addControlMsg msg = Free (AddControlMsg (msg, Pure))
-let clearControlMsgs msg = Free (ClearControlMsgs (msg, Pure))
-let addDeviceMsg msg = Free (AddDeviceMsg (msg, Pure))
-let clearDeviceMsgs msg = Free (ClearDeviceMsgs (msg, Pure))
-let getDeviceInput prompt = Free (GetDeviceInput (prompt, Pure))
-let cancelDeviceInput () = Free (CancelDeviceInput ((), Pure))
-let wait duration = Free (Wait (duration, Pure))
-let waitForData minDataValue = Free (WaitForData (minDataValue, Pure))
-let resetData () = Free (ResetData ((), Pure))
-let getCurrentData () = Free (GetCurrentData ((), Pure))
+module Actions = 
+    // These are convenience functions for use in the workflow computation expression.
+    let setControlState state = Free (SetControlState (state, Pure))
+    let setDeviceState state = Free (SetDeviceState (state, Pure))
+    let addControlMsg msg = Free (AddControlMsg (msg, Pure))
+    let clearControlMsgs msg = Free (ClearControlMsgs (msg, Pure))
+    let addDeviceMsg msg = Free (AddDeviceMsg (msg, Pure))
+    let clearDeviceMsgs msg = Free (ClearDeviceMsgs (msg, Pure))
+    let getDeviceInput prompt = Free (GetDeviceInput (prompt, Pure))
+    let cancelDeviceInput () = Free (CancelDeviceInput ((), Pure))
+    let wait duration = Free (Wait (duration, Pure))
+    let waitForData minDataValue = Free (WaitForData (minDataValue, Pure))
+    let resetData () = Free (ResetData ((), Pure))
+    let getCurrentData () = Free (GetCurrentData ((), Pure))
 
 /// Test interpreter.
 let rec interpretTest (send: string -> unit) program =

@@ -1,6 +1,7 @@
 ﻿module WorkflowDemo.Workflow.Workflows
 
 open Free
+open Free.Actions
 open WorkflowDemo.Common
 
 let reset = workflow {
