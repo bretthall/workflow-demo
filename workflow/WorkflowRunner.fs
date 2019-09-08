@@ -109,11 +109,68 @@ type RunnerState = private RunnerState of List<WorkflowResult>
 let defaultRunnerState = RunnerState []
 
 
-type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (RunnerState -> unit)) =
-    
-    let log = NLog.LogManager.GetLogger "Runner"
+type Runner(program: Free.WorkflowProgram<unit>,
+            curData: int,
+            prevRunnerState: RunnerState,
+            saveState: (RunnerState -> Async<unit>),
+            onInit: Runner -> unit) as this =
     
     let msgs = Event<RunnerMsg> ()
+    
+    let saveLog = NLog.LogManager.GetLogger "Runner.Save"
+    
+    let saveAgent = MailboxProcessor<WorkflowResultMsg>.Start (fun inbox ->
+        
+        inbox.Error.Add (fun err -> saveLog.Error (sprintf "Save agent got error: %A" err))
+        
+        let rec handler results =
+            async {
+                match! inbox.Receive () with
+                | WorkflowResultMsg.NewResult (result, reply) ->
+                    saveLog.Info (sprintf "Got new result: %A" result)
+                    let curPause, results =
+                        match List.tryHead results with
+                        | Some (WorkflowResult.Pause startTime) -> Some (WorkflowResult.Pause startTime), List.tail results
+                        | _ -> None, results                                                
+                    let results =
+                        match result with
+                        | WorkflowResult.Pause _ ->
+                            match curPause with
+                            | None -> result :: results
+                            | _ -> failwith "Got pause when already paused"
+                         | _ ->
+                             result :: results 
+                    let results =
+                        match curPause with
+                        | Some pause -> pause :: results
+                        | None -> results                        
+                    do! saveState (RunnerState results)
+                    saveLog.Info (sprintf "Saved results: %A" results)
+                    reply.Reply ()
+                    return! handler results
+                | WorkflowResultMsg.Resume (resumeTime, reply) ->
+                    saveLog.Info "Got resume"
+                    let results = 
+                        match List.tryHead results with
+                        | Some (WorkflowResult.Pause pauseTime) ->
+                            let results = List.tail results
+                            match List.tryHead results with
+                            | Some (WaitStart (startTime, duration)) ->
+                                let newStart = startTime.Add (resumeTime - pauseTime)
+                                (WorkflowResult.WaitStart (newStart, duration) :: (List.tail results))
+                            | _ ->
+                                results
+                        | _ ->
+                            failwith "Got resume without corresponding pause"
+                    do! saveState (RunnerState results)
+                    saveLog.Info (sprintf "Saved results after resume: %A" results)
+                    reply.Reply ()
+                    return! handler results
+            }
+        handler []
+    )
+
+    let log = NLog.LogManager.GetLogger "Runner"
     
     let agent = MailboxProcessor<RunnerAgentMsg>.Start(fun inbox ->
         
@@ -166,6 +223,7 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
                     | WorkflowState.WaitingForTime timeState  ->
                         timeState.cancelTimer.Cancel ()
                     | _ -> ()
+                    saveAgent.PostAndReply (fun r -> WorkflowResultMsg.NewResult (WorkflowResult.Pause startTime, r))
                     {newState with
                         workflowState = WorkflowState.Paused {
                             start = startTime
@@ -230,15 +288,19 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
                 | ActionMsg.Wait (startTime, duration, reply) ->
                     let now = DateTime.Now
                     let waitDuration = (int duration |> float |> TimeSpan.FromSeconds) - (now - startTime)
-                    let cancel, index = startTimer waitDuration
-                    let waitState = {
-                        reply = reply
-                        cancelTimer = cancel
-                        timerIndex = index
-                        duration = waitDuration
-                        start = startTime
-                    }
-                    {state with workflowState = WaitingForTime waitState}
+                    if waitDuration.TotalSeconds > 0.0 then
+                        let cancel, index = startTimer waitDuration
+                        let waitState = {
+                            reply = reply
+                            cancelTimer = cancel
+                            timerIndex = index
+                            duration = waitDuration
+                            start = startTime
+                        }
+                        {state with workflowState = WaitingForTime waitState}
+                    else
+                        reply.Reply ()
+                        {state with workflowState = RunningCommands}
                 | ActionMsg.WaitForData (minDataValue, reply) ->
                     let waitState = {
                         reply = reply
@@ -311,10 +373,11 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
             | _ ->
                 state
         and handleResume state pauseState =
+            let now = DateTime.Now
+            saveAgent.PostAndReply (fun r -> WorkflowResultMsg.Resume (now, r))
             let newState = 
                 match pauseState.previousState with
                 | WaitingForTime timeState ->
-                    let now = DateTime.Now
                     let newStart = timeState.start.Add (now - pauseState.start)
                     let diff = now - newStart
                     let cancel, index = startTimer (timeState.duration - diff)
@@ -347,70 +410,13 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
         }
     )
     
-    let saveLog = NLog.LogManager.GetLogger "Runner.Save"
-    
-    let saveAgent = MailboxProcessor<WorkflowResultMsg>.Start (fun inbox ->
-        
-        inbox.Error.Add (fun err -> saveLog.Error (sprintf "Save agent got error: %A" err))
-        
-        let rec handler results =
-            async {
-                match! inbox.Receive () with
-                | WorkflowResultMsg.NewResult (result, reply) ->
-                    saveLog.Info (sprintf "Got new result: %A" result)
-                    let curPause, results =
-                        match List.tryHead results with
-                        | Some (WorkflowResult.Pause startTime) -> Some (WorkflowResult.Pause startTime), List.tail results
-                        | _ -> None, results                                                
-                    let results =
-                        match result with
-                        | WorkflowResult.Wait _ ->
-                            match List.tryHead results with
-                            | Some (WaitStart _) -> result :: (List.tail results)
-                            | _ -> failwith "Got wait finish without a corresponding wait start"
-                        | WorkflowResult.Pause _ ->
-                            match curPause with
-                            | None -> result :: results
-                            | _ -> failwith "Got pause when already paused"
-                         | _ ->
-                             result :: results 
-                    let results =
-                        match curPause with
-                        | Some pause -> pause :: results
-                        | None -> results                        
-                    saveState (RunnerState results)
-                    saveLog.Info (sprintf "Saved results: %A" results)
-                    reply.Reply ()
-                    return! handler results
-                | WorkflowResultMsg.Resume (resumeTime, reply) ->
-                    saveLog.Info "Got resume"
-                    let results = 
-                        match List.tryHead results with
-                        | Some (WorkflowResult.Pause pauseTime) ->
-                            let results = List.tail results
-                            match List.tryHead results with
-                            | Some (WaitStart (startTime, duration)) ->
-                                let newStart = startTime.Add (resumeTime - pauseTime)
-                                (WorkflowResult.WaitStart (newStart, duration) :: (List.tail results))
-                            | _ ->
-                                results
-                        | _ ->
-                            failwith "Got resume without corresponding pause"
-                    saveState (RunnerState results)
-                    saveLog.Info (sprintf "Saved results after resume: %A" results)
-                    reply.Reply ()
-                    return! handler results
-            }
-        handler []
-    )
     let interpLog = NLog.LogManager.GetLogger "Runner.Interp"
-    
+        
     let saveResults prevResults newResult =
         async {
             do! saveAgent.PostAndAsyncReply (fun r -> WorkflowResultMsg.NewResult (newResult, r))
             return newResult :: prevResults
         }
-        
     let rec interpret prevResults curResults program =
         async {
             match prevResults with
@@ -422,6 +428,7 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
             | _ :: _ -> 
                 return! interpretWithResults prevResults curResults program
             | [] ->
+                interpLog.Info (sprintf "Out of results, switching to interpretNoResults. curResults = %A" curResults)
                 return! interpretNoResults curResults program                
         }
     and interpretWithResults prevResults curResults program =
@@ -434,56 +441,64 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
                 match prevResults with
                 | (WorkflowResult.SetControlState res) :: rest ->
                     interpLog.Info (sprintf "SetControlState %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.SetControlState res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.SetControlState res)
+                    return! res |> next |> interpret rest newResults
                 | result :: _ -> failwith (sprintf "Was expecting SetControlState saved result but got %A" result)
                 | [] -> failwith "Was expecting SetControlState saved result but got no result"
             | Free.Free (Free.SetDeviceState (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.SetDeviceState res) :: rest ->
                     interpLog.Info (sprintf "SetDeviceState %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.SetDeviceState res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.SetDeviceState res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting SetDeviceState saved result but got %A" result)
                 | [] -> failwith "Was expecting SetDeviceState saved result but got no result"
             | Free.Free (Free.AddControlMsg (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.AddControlMsg res) :: rest ->
                     interpLog.Info (sprintf "AddControlMsg %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.AddControlMsg res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.AddControlMsg res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting AddControlMsg saved result but got %A" result)
                 | [] -> failwith "Was expecting AddControlMsg saved result but got no result"
             | Free.Free (Free.ClearControlMsgs (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.ClearControlMsgs res) :: rest ->
                     interpLog.Info (sprintf "ClearControlMsgs %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.ClearControlMsgs res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.ClearControlMsgs res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting ClearControlMsgs saved result but got %A" result)
                 | [] -> failwith "Was expecting ClearControlMsgs saved result but got no result"
             | Free.Free (Free.AddDeviceMsg (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.AddDeviceMsg res) :: rest ->
                     interpLog.Info (sprintf "AddDeviceMsg %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.AddDeviceMsg res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.AddDeviceMsg res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting AddDeviceMsg saved result but got %A" result)
                 | [] -> failwith "Was expecting AddDeviceMsg saved result but got no result"
             | Free.Free (Free.ClearDeviceMsgs (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.ClearDeviceMsgs res) :: rest ->
                     interpLog.Info (sprintf "ClearDeviceMsgs %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.ClearDeviceMsgs res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.ClearDeviceMsgs res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting ClearDeviceMsgs saved result but got %A" result)
                 | [] -> failwith "Was expecting ClearDeviceMsgs saved result but got no result"
             | Free.Free (Free.GetDeviceInput (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.GetDeviceInput res) :: rest ->
                     interpLog.Info (sprintf "GetDeviceInput %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.GetDeviceInput res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.GetDeviceInput res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting GetDeviceInput saved result but got %A" result)
                 | [] -> failwith "Was expecting GetDeviceInput saved result but got no result"
             | Free.Free (Free.CancelDeviceInput (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.CancelDeviceInput res) :: rest ->
                     interpLog.Info (sprintf "CancelDeviceInput %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.CancelDeviceInput res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.CancelDeviceInput res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting CancelDeviceInput saved result but got %A" result)
                 | [] -> failwith "Was expecting CancelDeviceInput saved result but got no result"
             | Free.Free (Free.Wait (x, next)) -> 
@@ -493,35 +508,42 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
                     | (WorkflowResult.Pause pauseTime) :: [] -> 
                         interpLog.Info (sprintf "Paused saved result: %A" pauseTime)
                         agent.Post (RunnerAgentMsg.Pause pauseTime)
+                    | [] ->
+                        interpLog.Info "no results after wait start"                        
                     | _ -> 
                         failwith (sprintf "Got wait start with other results following it: %A" rest)
                     interpLog.Info (sprintf "Wait start %A saved result: %A" x (startTime, duration))
                     do! agent.PostAndAsyncReply (fun r  -> RunnerAgentMsg.Action (ActionMsg.Wait (startTime, duration, r)))
-                    return! () |> next |> interpret rest ((WorkflowResult.Wait ()) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.Wait ())
+                    return! () |> next |> interpret rest newResults 
                 | (WorkflowResult.Wait res) :: rest ->
                     interpLog.Info (sprintf "Wait %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.Wait res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.Wait res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting Wait saved result but got %A" result)
                 | [] -> failwith "Was expecting Wait saved result but got no result"
             | Free.Free (Free.WaitForData (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.WaitForData res) :: rest ->
                     interpLog.Info (sprintf "WaitForData %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.WaitForData res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.WaitForData res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting WaitForData saved result but got %A" result)
                 | [] -> failwith "Was expecting WaitForData saved result but got no result"
             | Free.Free (Free.ResetData (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.ResetData res) :: rest ->
                     interpLog.Info (sprintf "ResetData %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.ResetData res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.ResetData res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting ResetData saved result but got %A" result)
                 | [] -> failwith "Was expecting ResetData saved result but got no result"
             | Free.Free (Free.GetCurrentData (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.GetCurrentData res) :: rest ->
                     interpLog.Info (sprintf "GetCurrentData %A saved result: %A" x res)
-                    return! res |> next |> interpret rest ((WorkflowResult.GetCurrentData res) :: curResults) 
+                    let! newResults = saveResults curResults (WorkflowResult.GetCurrentData res)
+                    return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting GetCurrentData saved result but got %A" result)
                 | [] -> failwith "Was expecting GetCurrentData saved result but got no result"
         }
@@ -605,14 +627,17 @@ type Runner(program: Free.WorkflowProgram<unit>, curData: int, saveState: (Runne
                 let! value = agent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.GetCurrentData r))
                 interpLog.Info (sprintf "GetCurrentData result: %A" value)
                 let! newResults = saveResults results (WorkflowResult.GetCurrentData value) 
-                return! value |> next |> interpretNoResults newResults
+                return! value |> next |> interpretNoResults newResults    
         }
 
     let programCancel = new CancellationTokenSource ()
     
-    member __.Start (RunnerState prevResults) =
+    do
+        let (RunnerState prevResults) = prevRunnerState
         let runProgram = async {
-            log.Info "Starting workflow"
+            log.Info "Calling onInit"
+            onInit this
+            log.Info (sprintf "Starting workflow with prevResults: %A" prevResults)
             do! interpret (List.rev prevResults) [] program
             log.Info "Workflow done"
             agent.Post RunnerAgentMsg.Finish

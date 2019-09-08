@@ -5,6 +5,7 @@ open System
 open Terminal.Gui
 open Terminal.Gui.Elmish
 
+open System.Threading.Tasks
 open WorkflowDemo.Common
 open WorkflowDemo.Workflow
 
@@ -19,7 +20,7 @@ let workflowToText wf =
     | Workflows.RecurseIndeterminant -> "Indeterminant Recursion"
     | Workflows.RecurseWithFold -> "Fold Recursion"
     
-let workflows =
+let workflows resumable =
     [
         Workflows.Reset
         Workflows.Wait
@@ -27,24 +28,37 @@ let workflows =
         Workflows.RecurseDeterminant
         Workflows.RecurseIndeterminant
         Workflows.RecurseWithFold
-    ] |> List.map (fun wf -> (wf, workflowToText wf))
+    ] |> List.map (fun wf ->
+        if Some wf = resumable then 
+            (wf, sprintf "%s [RESUMABLE]" (workflowToText wf))
+        else
+            (wf, workflowToText wf)
+    )
 
 type NotRunningState = {
     selectedWorkflow: Workflows.Workflow
+    resumable: Option<Workflows.Workflow * WorkflowRunner.RunnerState>
     curData: int
 }
 
 type RunningState = {
     workflow: Workflows.Workflow
     runner: WorkflowRunner.Runner
+    runnerState: WorkflowRunner.RunnerState
     state: string
     paused: bool
+    cancelled: bool
     curData: int
     msgs: List<string>
 }
 
+type StartingState = {
+    workflow: Workflows.Workflow
+}
+
 type State =
     | NotRunning of NotRunningState
+    | Starting of StartingState
     | Running of RunningState
     | Done of RunningState
     
@@ -56,12 +70,13 @@ type Model = {
 let init client =
     let state = {
         client = client
-        state = NotRunning {selectedWorkflow = Workflows.Reset; curData = 0}
+        state = NotRunning {selectedWorkflow = Workflows.Reset; resumable = None; curData = 0}
     }
     state, Cmd.none
 
 type WorkflowMsg =
-    | Start
+    | Start of resume: bool
+    | Started of runner: WorkflowRunner.Runner * TaskCompletionSource<unit>
     | Pause of bool
     | Stop
     | Finish
@@ -71,6 +86,7 @@ type Msg =
     | ControlMsg of Control.Msg
     | WorkflowSelected of Workflows.Workflow
     | WorkflowMsg of WorkflowMsg
+    | SetRunnerState of WorkflowRunner.RunnerState * TaskCompletionSource<unit>
     | SetState of string
     | AddMsg of string
     | ClearMsgs
@@ -101,7 +117,7 @@ let logMessage state msg =
         match m with
         | Control.DataUpdate _ -> () //skipping data updates because they spam the log 
         | _ -> log.Info (sprintf "Got update message when %s: %A" state msg)
-    | _ -> log.Info (sprintf "Got update message: %A" msg)
+    | _ -> log.Info (sprintf "Got update message when %s: %A" state msg)
     
 let updateNotRunning client (state: NotRunningState) msg =
     logMessage "not running" msg
@@ -114,18 +130,37 @@ let updateNotRunning client (state: NotRunningState) msg =
     | WorkflowSelected wf -> NotRunning {state with selectedWorkflow = wf}, Cmd.none
     | WorkflowMsg m ->
         match m with
-        | Start ->
-            let runner = WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow, state.curData, fun _ -> ())             
+        | Start resume ->
             let sub dispatch =
-                runner.Msgs.Add (handleRunnerMsgs client dispatch)
-                runner.Start (WorkflowRunner.defaultRunnerState)
-            Running {
+                log.Info "Starting workflow subscription"
+                let initRunnerState =
+                    match state.resumable with
+                    | Some (workflow, runnerState) ->
+                        if resume && (workflow = state.selectedWorkflow) then
+                            runnerState
+                        else
+                            WorkflowRunner.defaultRunnerState
+                    | None -> 
+                        WorkflowRunner.defaultRunnerState
+                log.Info (sprintf "init workflow state: %A" initRunnerState)                        
+                let saveState results =
+                    let com = TaskCompletionSource()
+                    Application.MainLoop.Invoke (Action (fun _ -> dispatch (SetRunnerState (results, com))))
+                    Async.AwaitTask com.Task
+                let onInit (runner: WorkflowRunner.Runner) =
+                    let com = TaskCompletionSource()
+                    runner.Msgs.Add (handleRunnerMsgs client dispatch)
+                    Application.MainLoop.Invoke (Action (fun _ ->
+                        dispatch (WorkflowMsg (Started (runner, com)))
+                    ))
+                    com.Task.Wait ()
+                WorkflowRunner.Runner (Workflows.getProgram state.selectedWorkflow,
+                                        state.curData,
+                                        initRunnerState,
+                                        saveState,
+                                        onInit) |> ignore
+            Starting {
                 workflow = state.selectedWorkflow
-                runner = runner
-                state = "Started"
-                paused = false
-                curData = 0
-                msgs = []
             }, Cmd.ofSub sub
         | _ -> NotRunning state, Cmd.none
     | Quit ->        
@@ -153,6 +188,7 @@ let updateRunning state msg =
             Done {
                state with
                 state = sprintf "%s (CANCELLED)" state.state
+                cancelled = true
             }
         | Finish ->
             Done state
@@ -163,6 +199,9 @@ let updateRunning state msg =
                 state.runner.Resume ()
             Running {state with paused = paused}
         | _ -> Running state
+    | SetRunnerState (results, com) ->
+        com.SetResult ()
+        Running {state with runnerState = results}
     | SetState value -> Running {state with state = value}
     | AddMsg msg -> Running {state with msgs = msg :: state.msgs}
     | ClearMsgs -> Running {state with msgs = []}
@@ -173,7 +212,13 @@ let updateDone state msg =
     match msg with
     | WorkflowMsg m ->
         match m with
-        | Reset -> NotRunning {selectedWorkflow = state.workflow; curData = state.curData}
+        | Reset ->
+            let resumable =
+                if state.cancelled then
+                    Some (state.workflow, state.runnerState)
+                else
+                    None
+            NotRunning {selectedWorkflow = state.workflow; curData = state.curData; resumable = resumable}
         | _ -> Done state
     | _ -> Done state
 
@@ -192,6 +237,25 @@ let update msg model =
         let newRunState, cmd = updateNotRunning model.client state msg 
         let newState = {model with state = newRunState}
         newState, cmd
+    | Starting startingState ->
+        logMessage "starting" msg
+        match msg with
+        | WorkflowMsg (Started (runner, reply)) -> 
+            reply.SetResult ()
+            {model with
+                state = 
+                    Running {
+                        workflow = startingState.workflow
+                        runner = runner
+                        runnerState = WorkflowRunner.defaultRunnerState
+                        state = "Started"
+                        paused = false
+                        cancelled = false
+                        curData = 0
+                        msgs = []
+                    }
+            }, Cmd.none
+        | _ -> model, Cmd.none
     | Running state  -> {model with state = updateRunning state msg}, Cmd.none
     | Done state -> {model with state = updateDone state msg}, Cmd.none
 
@@ -210,14 +274,20 @@ let viewNotRunning state dispatch : List<View>=
                     Dim (Fill, FillMargin 1)
                 ]
                 Value state.selectedWorkflow
-                Items workflows
+                Items (state.resumable |> Option.map fst |> workflows)
                 OnChanged (fun wf -> dispatch (WorkflowSelected wf))
             ]    
             yield button [
                 Text "Start"
                 Styles [Pos (AbsPos 0, PercentPos 99.0)]
-                OnClicked  (fun _ -> dispatch (WorkflowMsg Start))
+                OnClicked  (fun _ -> dispatch (WorkflowMsg (Start false)))
             ]
+            if (Some state.selectedWorkflow) = (state.resumable |> Option.map fst) then
+                yield button [
+                    Text "Resume"
+                    Styles [Pos (AbsPos 10, PercentPos 99.0)]
+                    OnClicked  (fun _ -> dispatch (WorkflowMsg (Start true)))
+                ]       
         ]
         
         yield button [
@@ -226,8 +296,15 @@ let viewNotRunning state dispatch : List<View>=
             OnClicked  (fun _ -> dispatch Quit)
         ]        
     ]
-
-let viewRunning state dispatch : List<View> =
+let viewStarting (state: StartingState) : List<View> =
+    [
+        yield label [
+            Text (sprintf "Starting %s" (workflowToText state.workflow))
+            Styles [Pos (AbsPos 0, AbsPos 0)]
+        ]
+    ]
+    
+let viewRunning (state: RunningState) dispatch : List<View> =
     [
         let wfRow = 0
         let wfText = sprintf "Workflow: %s " (workflowToText state.workflow)
@@ -277,7 +354,7 @@ let viewRunning state dispatch : List<View> =
         ]        
     ]
 
-let viewDone state dispatch : List<View> =
+let viewDone (state: RunningState) dispatch : List<View> =
     [
         let wfRow = 0
         let wfText = sprintf "Workflow: %s (DONE)" (workflowToText state.workflow)
@@ -326,6 +403,7 @@ let view model dispatch =
         window [Title "Control"][
             match model.state with
             | NotRunning state  -> yield! viewNotRunning state dispatch
+            | Starting state -> yield! viewStarting state
             | Running state  -> yield! viewRunning state dispatch
             | Done state -> yield! viewDone state dispatch
         ]
@@ -337,6 +415,7 @@ let main _ =
     let target = new NLog.Targets.FileTarget (name = "file",
                                               FileName = NLog.Layouts.Layout.FromString "control.log",
                                               DeleteOldFileOnStartup = true,
+                                              Layout = NLog.Layouts.Layout.FromString "${time}|${level}|${logger}|${threadid}|${message}",
                                               KeepFileOpen = true)
     config.AddTarget target
     config.AddRuleForAllLevels (target, "*")
