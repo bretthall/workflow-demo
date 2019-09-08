@@ -105,8 +105,8 @@ let handleRunnerMsgs (client: Client) dispatch msg =
     | WorkflowRunner.StartDeviceInput prompt -> client.Send (Device.RequestInput prompt) 
     | WorkflowRunner.CancelDeviceInput -> client.Send Device.CancelInput
     | WorkflowRunner.ResetData -> client.Send Device.ResetData
-    | WorkflowRunner.Paused -> ()
-    | WorkflowRunner.Resumed -> ()
+    | WorkflowRunner.Paused -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (Pause true |> WorkflowMsg)))
+    | WorkflowRunner.Resumed -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (Pause false |> WorkflowMsg)))
     | WorkflowRunner.Cancelled -> ()
     | WorkflowRunner.Finished -> Application.MainLoop.Invoke (Action (fun _ -> dispatch (WorkflowMsg Finish)))
 
@@ -193,10 +193,11 @@ let updateRunning state msg =
         | Finish ->
             Done state
         | Pause paused ->
-            if paused then
-                state.runner.Pause ()
-            else
-                state.runner.Resume ()
+            if paused <> state.paused then
+                if paused then
+                    state.runner.Pause ()
+                else
+                    state.runner.Resume ()
             Running {state with paused = paused}
         | _ -> Running state
     | SetRunnerState (results, com) ->

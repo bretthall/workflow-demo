@@ -138,8 +138,14 @@ type Runner(program: Free.WorkflowProgram<unit>,
                             match curPause with
                             | None -> result :: results
                             | _ -> failwith "Got pause when already paused"
-                         | _ ->
-                             result :: results 
+                        | WorkflowResult.Wait () ->
+                            match List.tryHead results with
+                            | Some (WorkflowResult.WaitStart _) ->
+                                result :: (List.tail results)
+                            | _ ->
+                                result :: results
+                        | _ ->
+                            result :: results 
                     let results =
                         match curPause with
                         | Some pause -> pause :: results
@@ -224,6 +230,7 @@ type Runner(program: Free.WorkflowProgram<unit>,
                         timeState.cancelTimer.Cancel ()
                     | _ -> ()
                     saveAgent.PostAndReply (fun r -> WorkflowResultMsg.NewResult (WorkflowResult.Pause startTime, r))
+                    msgs.Trigger RunnerMsg.Paused
                     {newState with
                         workflowState = WorkflowState.Paused {
                             start = startTime
@@ -513,6 +520,7 @@ type Runner(program: Free.WorkflowProgram<unit>,
                     | _ -> 
                         failwith (sprintf "Got wait start with other results following it: %A" rest)
                     interpLog.Info (sprintf "Wait start %A saved result: %A" x (startTime, duration))
+                    let! _ = saveResults curResults (WorkflowResult.WaitStart (startTime, duration))
                     do! agent.PostAndAsyncReply (fun r  -> RunnerAgentMsg.Action (ActionMsg.Wait (startTime, duration, r)))
                     let! newResults = saveResults curResults (WorkflowResult.Wait ())
                     return! () |> next |> interpret rest newResults 
