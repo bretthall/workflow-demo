@@ -10,6 +10,11 @@ type ms
 
 let msInSeconds = 1000<ms/seconds>
 
+/// The workflow instructions. Each DU case is an instruction. The first member of the argument pair of an instruction
+/// is the instructions argument (use unit for instructions that don't have arguments). The second member of the pair
+/// is a function that takes the result type of the instruction (use unit if the instruction has no result) and returns
+/// the type 'a. To add a new instruction just add a case to this DU, then update all the broken match expressions and
+/// add a convenience function for the instruction below.
 type WorkflowInstruction<'a> =
     | SetControlState of state:string * (unit -> 'a)
     | SetDeviceState of state:Device.State * (unit -> 'a)
@@ -24,6 +29,7 @@ type WorkflowInstruction<'a> =
     | ResetData of unit * (unit -> 'a)
     | GetCurrentData of unit * (int -> 'a)
     
+/// map function that turns WorkflowInstruction into a functor. Every case follows the same pattern.
 let private mapI f = function
     | SetControlState (x, next) -> SetControlState (x, next >> f)
     | SetDeviceState (x, next) -> SetDeviceState (x, next >> f)
@@ -38,22 +44,31 @@ let private mapI f = function
     | ResetData (x, next) -> ResetData (x, next >> f)
     | GetCurrentData (x, next) -> GetCurrentData (x, next >> f)
     
+/// Combines workflow instructions into programs (builds a monad on top of the WorkflowInstruction functor)
 type WorkflowProgram<'a> =
 | Free of WorkflowInstruction<WorkflowProgram<'a>>
 | Pure of 'a    
 
+/// Allows workflow programs to be combined.
 let rec bind f = function
 | Free x -> x |> mapI (bind f) |> Free
 | Pure x -> f x
 
+/// Builds the workflow computation expression. 
 type WorkflowBuilder () =
     member this.Bind (x, f) = bind f x
     member this.Return x = Pure x
     member this.ReturnFrom x = x
     member this.Zero () = Pure ()
     
+/// The workflow computation expression. Use the functions below within this computation expression to build
+/// workflow programs. These programs can then be passed to interpreters to be run.
 let workflow = WorkflowBuilder ()
 
+/// Folds the given sequence into a workflow program over the elements of the sequence. I.e. it calls the given function
+/// for each element of the sequence. For the first sequence element the given initial state is also passed to the
+/// function. Subsequent calls of the function will use the previous result of the function for the state argument. The
+/// result of the fold will be the result of the final call of the function. 
 let fold (f: 'State -> 'T -> WorkflowProgram<'State>) (init:'State) (values: seq<'T>) =
     let rec step state remaining =
         workflow {
@@ -65,6 +80,7 @@ let fold (f: 'State -> 'T -> WorkflowProgram<'State>) (init:'State) (values: seq
         }
     step init values
     
+// These are convenience functions for use in the workflow computation expression.
 let setControlState state = Free (SetControlState (state, Pure))
 let setDeviceState state = Free (SetDeviceState (state, Pure))
 let addControlMsg msg = Free (AddControlMsg (msg, Pure))
@@ -78,6 +94,7 @@ let waitForData minDataValue = Free (WaitForData (minDataValue, Pure))
 let resetData () = Free (ResetData ((), Pure))
 let getCurrentData () = Free (GetCurrentData ((), Pure))
 
+/// Test interpreter.
 let rec interpretTest (send: string -> unit) program =
     let interpret = interpretTest send
     let sendMessage res name value =

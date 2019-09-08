@@ -5,6 +5,9 @@ open Expecto
 open WorkflowDemo.Workflow
 open WorkflowDemo.Common
 
+/// The possible instructions that can be in a workflow. Each case (except Pure) has a value that is the expected
+/// argument of the instruction and the result the instruction should return. The Pure case just contains the expected
+/// result.
 type ExpectedInstruction<'a> =
     | SetControlState of state:string * unit
     | SetDeviceState of state:Device.State * unit
@@ -20,6 +23,9 @@ type ExpectedInstruction<'a> =
     | GetCurrentData of unit * int
     | Pure of 'a
 
+/// A workflow interpreter that checks each workflow action against the list of expected actions that it is given.
+/// Both the instruction type and argument are checked, then the result from the expected actions is the result of the
+/// action.
 let rec interpretTest expectedProgram program =    
     let expected = List.head expectedProgram
     let getExpectedTail () =
@@ -117,7 +123,7 @@ let tests =
     testList "Workflow" [
         
         testCase "wait" <| fun _ ->
-            
+            // A sample test for the Wait workflow.
             let expected = [
                 yield SetDeviceState (Device.Good, ())
                 yield AddDeviceMsg ("Waiting for 5 seconds", ())
