@@ -72,7 +72,7 @@ let recurseWithFold = workflow {
             fun s t ->
                 workflow {
                     do! setDeviceState t
-                    do! Free.wait 5<seconds>
+                    do! Free.Actions.wait 5<seconds>
                     return (s + 1)           
                 }
         )

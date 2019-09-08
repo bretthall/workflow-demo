@@ -13,11 +13,6 @@ module private Private =
         | Device.Bad -> "Bad"
         | Device.Ugly -> "Ugly"
 
-    let stateToColor = function
-        | Device.Good -> Color.Green
-        | Device.Bad -> Color.Red
-        | Device.Ugly -> Color.Brown
-
 open Private
 
 let view (model: Model.Model) dispatch =
@@ -30,7 +25,6 @@ let view (model: Model.Model) dispatch =
             let stateRow = 0
             yield label [
                 Styles [
-                    Colors (stateToColor model.state, Color.Blue)
                     Pos (AbsPos 0, AbsPos stateRow)
                 ]
                 Text (sprintf "State: %s" (stateToText model.state))                                
