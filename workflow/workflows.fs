@@ -49,7 +49,6 @@ let choice = workflow {
         do! addControlMsg (sprintf "Chose other path: %s" input)
 }
 
-//TODO: Exercise 4: Implement the recursive workflow below
 let recurse = 
     // Make a recursive workflow that asks for input until the input is "stop".
     let rec getInput index = workflow {
@@ -67,9 +66,13 @@ let recurse =
         do! addDeviceMsg (sprintf "Got %d inputs" num)
     }
 
-
+//TODO: Exercise 5: Implement the workflow below using fold (from the Free module)
 let fold = workflow {
-    do! addControlMsg "Workflow not implemented (later exercise)"    
+    do! addControlMsg "Workflow not implemented" //Remove when workflow is implemented
+    
+    // Use fold to iterate the good, bad, and ugly device states setting each one in the device
+    // waiting 5 seconds after each change. While doing the fold count how many changes are made
+    // and report that value in a control message when the fold is done.
 }
 
 type Workflow =
