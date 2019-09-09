@@ -7,9 +7,10 @@ open WorkflowDemo.Common
 let reset = workflow {
     do! setDeviceState Device.Good
     do! cancelDeviceInput ()
-    do! resetData ()
     do! clearDeviceMsgs ()
     do! clearControlMsgs ()
+    //Exercise 6: converted resetData to resetDataWithMsg (also moved to end so the message doesn't get cleared)
+    do! resetDataWithMsg ()
 }
 
 let wait = workflow {

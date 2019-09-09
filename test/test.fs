@@ -20,6 +20,8 @@ type ExpectedInstruction<'a> =
     | Wait of duration:int<Free.seconds> * unit
     | WaitForData of minDataValue:int * int
     | ResetData of unit * unit
+    //Exercise 6: Added case for ResetDataWithMsg
+    | ResetDataWithMsg of unit * unit
     | GetCurrentData of unit * int
     | Pure of 'a
 
@@ -108,6 +110,14 @@ let rec interpretTest expectedProgram program =
         match expected with
         | ResetData (arg, res) ->
             Expect.equal x arg "Expected to get correct argument for ResetData"
+            res |> next |> (getExpectedTail () |> interpretTest)
+        | _ ->
+            failtest (sprintf "Expected %A but got %A instead" expected program)
+    //Exercise 6: Added handler for ResetDataWithMsg
+    | Free.Free (Free.ResetDataWithMsg (x, next)) ->
+        match expected with
+        | ResetDataWithMsg (arg, res) ->
+            Expect.equal x arg "Expected to get correct argument for ResetDataWithMsg"
             res |> next |> (getExpectedTail () |> interpretTest)
         | _ ->
             failtest (sprintf "Expected %A but got %A instead" expected program)

@@ -31,6 +31,8 @@ type WorkflowInstruction<'a> =
     | Wait of duration:int<seconds> * (unit -> 'a)
     | WaitForData of minDataValue:int * (int -> 'a)
     | ResetData of unit * (unit -> 'a)
+    //Exercise 6: Added new instruction
+    | ResetDataWithMsg of unit * (unit -> 'a)
     | GetCurrentData of unit * (int -> 'a)
     
 /// map function that turns WorkflowInstruction into a functor. Every case follows the same pattern.
@@ -46,6 +48,8 @@ let private mapI f = function
     | Wait (x, next) -> Wait (x, next >> f)
     | WaitForData (x, next) -> WaitForData (x, next >> f)
     | ResetData (x, next) -> ResetData (x, next >> f)
+    //Exercise 6: added handler for ResetDataWithMsg
+    | ResetDataWithMsg (x, next) -> ResetDataWithMsg (x, next >> f)
     | GetCurrentData (x, next) -> GetCurrentData (x, next >> f)
     
 /// Combines workflow instructions into programs (builds a monad on top of the WorkflowInstruction functor)
@@ -97,6 +101,8 @@ module Actions =
     let wait duration = Free (Wait (duration, Pure))
     let waitForData minDataValue = Free (WaitForData (minDataValue, Pure))
     let resetData () = Free (ResetData ((), Pure))
+    //Exercise 6: Added convenience function for ResetDataWithMsg
+    let resetDataWithMsg () = Free (ResetDataWithMsg ((), Pure))
     let getCurrentData () = Free (GetCurrentData ((), Pure))
 
 /// Test interpreter.
@@ -118,4 +124,6 @@ let rec interpretTest (send: string -> unit) program =
     | Free (Wait (x, next)) -> x |> sendMessage () "Wait"  |> next |> interpret
     | Free (WaitForData (x, next)) -> x |> sendMessage 10 "WaitForData"  |> next |> interpret
     | Free (ResetData (x, next)) -> x |> sendMessage () "ResetData"  |> next |> interpret
+    //Exercise 6: Added handler for ResetDataWithMsg
+    | Free (ResetDataWithMsg (x, next)) -> x |> sendMessage () "ResetDataWithMsg"  |> next |> interpret
     | Free (GetCurrentData (x, next)) -> x |> sendMessage 1 "GetCurrentData"  |> next |> interpret

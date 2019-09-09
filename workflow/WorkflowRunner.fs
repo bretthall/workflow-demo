@@ -22,6 +22,8 @@ module private Internal =
         | Wait of unit
         | WaitForData of int
         | ResetData of unit
+        //Exercise 6: Added case for ResetDataWithMsg
+        | ResetDataWithMsg of unit
         | GetCurrentData of int
         | Pause of start:DateTime
 
@@ -584,6 +586,15 @@ type Runner(program: Free.WorkflowProgram<unit>,
                     return! res |> next |> interpret rest newResults 
                 | result :: _ -> failwith (sprintf "Was expecting ResetData saved result but got %A" result)
                 | [] -> failwith "Was expecting ResetData saved result but got no result"
+            //Exercise 6: Added handler for ResetDataWithMsg
+            | Free.Free (Free.ResetDataWithMsg (x, next)) -> 
+                match prevResults with
+                | (WorkflowResult.ResetDataWithMsg res) :: rest ->
+                    interpLog.Info (sprintf "ResetDataWithMsg %A saved result: %A" x res)
+                    let! newResults = saveResults curResults (WorkflowResult.ResetDataWithMsg res)
+                    return! res |> next |> interpret rest newResults 
+                | result :: _ -> failwith (sprintf "Was expecting ResetDataWithMsg saved result but got %A" result)
+                | [] -> failwith "Was expecting ResetDataWithMsg saved result but got no result"
             | Free.Free (Free.GetCurrentData (x, next)) -> 
                 match prevResults with
                 | (WorkflowResult.GetCurrentData res) :: rest ->
@@ -671,6 +682,14 @@ type Runner(program: Free.WorkflowProgram<unit>,
                 do! workflowAgent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ResetData r))
                 interpLog.Info "ResetData done"
                 let! newResults = saveResults results (WorkflowResult.ResetData ())
+                return! () |> next |> interpretNoResults newResults
+            //Exercise 6: Added handler for ResetDataWithMsg
+            | Free.Free (Free.ResetDataWithMsg ((), next)) -> 
+                interpLog.Info "ResetDataWithMsg"
+                do! workflowAgent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.ResetData r))
+                do! workflowAgent.PostAndAsyncReply (fun r -> RunnerAgentMsg.Action (ActionMsg.AddDeviceMsg ("reset data", r)))
+                interpLog.Info "ResetDataWithMsg done"
+                let! newResults = saveResults results (WorkflowResult.ResetDataWithMsg ())
                 return! () |> next |> interpretNoResults newResults
             | Free.Free (Free.GetCurrentData ((), next)) -> 
                 interpLog.Info "GetCurrentData"
