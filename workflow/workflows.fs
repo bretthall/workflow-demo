@@ -35,8 +35,14 @@ let wait = workflow {
     do! setDeviceState Device.Good
 }
 
+//TODO: Exercise 3: Implement the branching workflow below
 let choice = workflow {
-    do! addControlMsg "Workflow not implemented (later exercise)"    
+    do! addControlMsg "Workflow not implemented" //Remove this when the workflow is implemented
+    
+    // Get device input, prompt should ask for path A or B
+    // if path A is chosen set the device state to "ugly"
+    // if path B is chosen reset the device data
+    // if another path is chosen add a control message saying what was entered
 }
 
 let recurse = workflow {
