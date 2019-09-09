@@ -35,7 +35,6 @@ let wait = workflow {
     do! setDeviceState Device.Good
 }
 
-//TODO: Exercise 3: Implement the branching workflow below
 let choice = workflow {
     // Get device input, prompt should ask for path A or B
     let! input = getDeviceInput "Path A or B?"
@@ -50,8 +49,13 @@ let choice = workflow {
         do! addControlMsg (sprintf "Chose other path: %s" input)
 }
 
+//TODO: Exercise 4: Implement the recursive workflow below
 let recurse = workflow {
-    do! addControlMsg "Workflow not implemented (later exercise)"    
+    do! addControlMsg "Workflow not implemented" //Remove when workflow is implemented
+    
+    // Make a recursive workflow that asks for input until the input is "stop".
+    // A control message containing the input should be added for each input received.
+    // When "stop" is received a device message should be added saying how many inputs were received.     
 }
 
 let fold = workflow {
