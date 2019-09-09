@@ -16,18 +16,16 @@ let workflowToText wf =
     | Workflows.Reset -> "Reset Device"
     | Workflows.Wait -> "Wait"
     | Workflows.Choice -> "Choice"
-    | Workflows.RecurseDeterminant -> "Determinant Recursion"
-    | Workflows.RecurseIndeterminant -> "Indeterminant Recursion"
-    | Workflows.RecurseWithFold -> "Fold Recursion"
+    | Workflows.Recurse -> "Recursion"
+    | Workflows.Fold -> "Fold"
     
 let workflows resumable =
     [
         Workflows.Reset
         Workflows.Wait
         Workflows.Choice
-        Workflows.RecurseDeterminant
-        Workflows.RecurseIndeterminant
-        Workflows.RecurseWithFold
+        Workflows.Recurse
+        Workflows.Fold
     ] |> List.map (fun wf ->
         if Some wf = resumable then 
             (wf, sprintf "%s [RESUMABLE]" (workflowToText wf))

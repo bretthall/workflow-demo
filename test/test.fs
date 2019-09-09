@@ -123,27 +123,8 @@ let tests =
     testList "Workflow" [
         
         testCase "wait" <| fun _ ->
-            // A sample test for the Wait workflow.
-            let expected = [
-                yield SetDeviceState (Device.Good, ())
-                yield AddDeviceMsg ("Waiting for 5 seconds", ())
-                yield Wait (5<Free.seconds>, ())
-                yield SetDeviceState (Device.Bad, ())
-                let curData = 5
-                yield GetCurrentData ((), curData)
-                let targetData = curData + 5
-                yield AddDeviceMsg ((sprintf "Waiting for data = %d" targetData), ())
-                let finalData = targetData + 1
-                yield WaitForData (targetData, finalData)
-                yield AddDeviceMsg ((sprintf "final data = %d" finalData), ())
-                yield SetDeviceState (Device.Ugly, ())
-                yield AddDeviceMsg ("Waiting for input", ())
-                let input = "testing 1 2 3"
-                yield GetDeviceInput ("Waiting for input", input)
-                yield AddDeviceMsg ((sprintf "Got input = %s" input), ())
-                yield SetDeviceState (Device.Good, ())
-                yield Pure ()
-            ]
+            // for a later exercise.
+            let expected = []
         
             interpretTest expected Workflows.wait            
     ]
