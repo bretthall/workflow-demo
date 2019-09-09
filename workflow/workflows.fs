@@ -50,13 +50,23 @@ let choice = workflow {
 }
 
 //TODO: Exercise 4: Implement the recursive workflow below
-let recurse = workflow {
-    do! addControlMsg "Workflow not implemented" //Remove when workflow is implemented
-    
+let recurse = 
     // Make a recursive workflow that asks for input until the input is "stop".
-    // A control message containing the input should be added for each input received.
-    // When "stop" is received a device message should be added saying how many inputs were received.     
-}
+    let rec getInput index = workflow {
+        let! input = getDeviceInput "Input (\"stop\" to stop)"
+        if input.ToLower () <> "stop" then
+            // A control message containing the input should be added for each input received.
+            do! addControlMsg (sprintf "Input %d: %s" index input)
+            return! getInput (index + 1)
+        else
+            return index - 1
+    }
+    workflow {
+        let! num = getInput 1
+        // When "stop" is received a device message should be added saying how many inputs were received.     
+        do! addDeviceMsg (sprintf "Got %d inputs" num)
+    }
+
 
 let fold = workflow {
     do! addControlMsg "Workflow not implemented (later exercise)"    
