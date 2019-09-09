@@ -10,6 +10,10 @@ type ms
 
 let msInSeconds = 1000<ms/seconds>
 
+// TODO: Exercise 6: Add a new action to the workflow system. This action should reset the device data
+// and add a device message saying that the data was reset. Modify the resetDevice workflow to use this new
+// action instead of resetData.
+
 /// The workflow instructions. Each DU case is an instruction. The first member of the argument pair of an instruction
 /// is the instructions argument (use unit for instructions that don't have arguments). The second member of the pair
 /// is a function that takes the result type of the instruction (use unit if the instruction has no result) and returns

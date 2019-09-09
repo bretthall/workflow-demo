@@ -66,7 +66,6 @@ let recurse =
         do! addDeviceMsg (sprintf "Got %d inputs" num)
     }
 
-//TODO: Exercise 5: Implement the workflow below using fold (from the Free module)
 let fold = workflow {
     // Use fold to iterate the good, bad, and ugly device states setting each one in the device
     // waiting 5 seconds after each change. While doing the fold count how many changes are made
