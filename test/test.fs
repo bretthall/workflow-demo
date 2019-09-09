@@ -123,7 +123,7 @@ let tests =
     testList "Workflow" [
         
         testCase "wait" <| fun _ ->
-            // for a later exercise.
+            //TODO: Exercise 2: Fill in expected so that this test will test the wait workflow from exercise 1
             let expected = []
         
             interpretTest expected Workflows.wait            

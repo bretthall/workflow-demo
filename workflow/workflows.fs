@@ -12,7 +12,6 @@ let reset = workflow {
     do! clearControlMsgs ()
 }
 
-//TODO: Exercise 1: Fill in the following workflow
 let wait = workflow {
     // set the device state to "good"
     do! setDeviceState Device.Good
