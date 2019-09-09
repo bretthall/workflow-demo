@@ -12,9 +12,9 @@ let update (msg: Model.Message) (model: Model.Model) =
     | Model.DeviceMsg dm ->
         log.Info (sprintf "Got device msg: %A" dm)
         match dm with
-        | Device.SetState state -> {model with state = state; msgs = "got set state" :: model.msgs}
-        | Device.RequestInput prompt -> {model with inputState = Some {prompt = prompt; current = ""}; msgs = "got start input" :: model.msgs}
-        | Device.CancelInput -> {model with inputState = None; msgs = "got cancel input" :: model.msgs}
+        | Device.SetState state -> {model with state = state}
+        | Device.RequestInput prompt -> {model with inputState = Some {prompt = prompt; current = ""}}
+        | Device.CancelInput -> {model with inputState = None}
         | Device.AddMsg msg -> {model with msgs = msg :: model.msgs}
         | Device.ClearMsgs -> {model with msgs = []}
         | Device.ResetData -> {model with dataValue = 0}
