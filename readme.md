@@ -4,7 +4,9 @@ This is demo code for the talk [Using Free Monads to Simplify Workflows](https:/
 
 ## Building
 
-[.Net Core](https://dotnet.microsoft.com/download) 2.1 or newer is required. To build simply do `dotnet build`. The first time this is done you will need an internet connection so that Nuget packages can be installed.
+Currently [.Net Core](https://dotnet.microsoft.com/download) 2.2 or newer is required. I'm trying to lower that requirement to 2.1, but having problems (it will build with 2.1 but then runtime errors about missing assemblies will occur). I'll update here if I get things working.
+
+To build simply do `dotnet build`. The first time this is done you will need an internet connection so that Nuget packages can be installed.
 
 ## Running
 
