@@ -1,6 +1,6 @@
 # Workflow Demo
 
-This is demo code for the talk [Using Free Monads to Simplify Workflows](https://www.openfsharp.org/speakers/2019/brett-hall/) at [Open F# 2019](https://www.openfsharp.org). 
+This is demo code for the talk [Using Free Monads to Simplify Workflows](https://www.openfsharp.org/speakers/2019/brett-hall/) at [Open F# 2019](https://www.openfsharp.org). The slides from the talk are available in the `slides` directory (or see [github](https://github.com/bretthall/workflow-demo/blob/master/slides/free-monads.pdf)).
 
 ## Building
 
